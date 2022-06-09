@@ -13,13 +13,13 @@ import subprocess
 import sys
 from zipfile import ZipFile
 
-from versions import go_version, ipfs_version, ipfs_cluster_version
+from versions import go_version, ipfs_version, ipfs_cluster_version,geth_version
 
 tmp_dir = os.path.join(os.path.dirname(os.path.normpath(sys.argv[0])),'.tmp')
 
 sys.path.append(os.path.abspath(os.path.join(tmp_dir,'../..')))
 
-from ipfs import IPFS
+from ipfs import IPFS, IPFSCluster
 
 def downloadFile(url,dest_dir):
     if not os.path.isdir(dest_dir):
@@ -170,8 +170,8 @@ def installIPFSClusterService(args):
 
     tmp_out = None
     try:
-        tmp_out = subprocess.run(['ipfs-cluster-service','version'],capture_output=True,text=True)
-        assert not 'command not found' in tmp_out, "There appears to be an issue retrieving the IPFS-Cluster-Service version..."
+        tmp_out = subprocess.run(['ipfs-cluster-service','--version'],capture_output=True,text=True)
+        assert 'ipfs-cluster-service' in tmp_out[:20], "There appears to be an issue retrieving the IPFS-Cluster-Service version..."
     except:
         print("IPFS-Cluster-Service installation not found")
     
@@ -213,9 +213,74 @@ def installIPFSClusterService(args):
                 print("Service configuration already exists! Skipping.")
 
         print('NOTE: Other IPFS-Cluster Nodes must have the same value for "secret" in service.json!')
+        print('NOTE: Bootstrapping may be necessary depending on network topology. If so, start the daemon with ipfs-cluster-service --bootstrap <ClusterPeerMultiAddress1,...>')
         print('IPFS-Cluster-Service Installation Step Complete')
-            
+   
     pass
+
+def installIPFSClusterControl(args):
+    global tmp_dir
+    ipfscluster_url = 'https://dist.ipfs.io/ipfs-cluster-ctl/v'+ipfs_cluster_version+'/'
+    ipfscluster_fname = 'ipfs-cluster-ctl_v'+ipfs_cluster_version+'_windows-amd64.zip'
+
+    tmp_out = None
+    try:
+        tmp_out = subprocess.run(['ipfs-cluster-ctl','--version'],capture_output=True,text=True)
+        assert 'ipfs-cluster-ctl' in tmp_out[:16], "There appears to be an issue retrieving the IPFS-Cluster-Service version..."
+    except:
+        print("IPFS-Cluster-Ctl installation not found")
+    
+    if not tmp_out: #TODO: Remove not
+        print("IPFS-Cluster-Ctl already installed: ", tmp_out)
+    else:
+        if not args.noinstall:
+            #Download IPFS Zip File
+            print("Acquiring IPFS-Cluster-Ctl...")
+            ipfscluster_fname = downloadFile(ipfscluster_url+ipfscluster_fname,tmp_dir)
+            print("Extracting contents to",Path.home()/'Apps'/os.path.splitext(ipfscluster_fname)[0])
+            with ZipFile(os.path.join(tmp_dir,ipfscluster_fname),'r') as zf:
+                zf.extractall(Path.home()/'Apps'/os.path.splitext(ipfscluster_fname)[0])
+            
+            #Add path to extracted folder to $PATH
+            print("Updating path...")
+            p = str(Path.home()/'Apps'/os.path.splitext(ipfscluster_fname)[0]/'ipfs-cluster-ctl')
+            user_path = subprocess.run(["powershell", "-Command","[Environment]::GetEnvironmentVariable('Path','User')"], capture_output=True,text=True).stdout
+            
+            found = False
+            for tmp_path in user_path.strip().split(';'):
+                if not tmp_path.strip():
+                    continue
+                if p == tmp_path:
+                    found = True
+                    break
+
+            if found:
+                print("IPFS-Cluster-Service location already in PATH!")
+            else:
+                output = subprocess.run(['setx','PATH',user_path.strip()+p+';']).stdout
+            
+        print('IPFS-Cluster-Ctl Installation Step Complete')
+   
+    pass
+
+def installGeth(args):
+    geth_url = 'https://gethstore.blob.core.windows.net/builds/'
+    geth_fname = 'geth-windows-amd64-'+geth_version+'.exe'
+    
+    tmp_out = None
+    try:
+        tmp_out = subprocess.run(['geth','version'],capture_output=True,text=True).stdout
+        assert tmp_out[:4] == 'Geth', "There appears to be an issue retrieving the Geth version..."
+    except:
+        print("Geth installation not found")
+    
+    if tmp_out:
+        print('Geth already installed: ',tmp_out)
+    else:
+        if not args.noinstall:
+            print("Acquiring Geth Installer...")
+            geth_fname = downloadFile(geth_url+geth_fname,tmp_dir)
+            subprocess.run(['msiexec','/i',os.path.join(tmp_dir,geth_fname)])
 
 def parseArgs():
     parser = argparse.ArgumentParser()
@@ -224,6 +289,7 @@ def parseArgs():
     parser.add_argument('--generate_swarm_key',action='store_true',help='Should be set for the first node in the network installing the software to generate a shared IPFS swarm key')
     parser.add_argument('--ipfs_bootstrap_id',action='store_true',help='If set, will generate a bootstrap_id.txt file in the .ipfs folder to use with other node installations.')
     parser.add_argument('--ipfs_bootstrap_file',type=str,help='Path to file with bootstrap ids to add to the current node. WILL OVERWRITE EXISTING BOOTSTRAP NODE DATA!')
+    parser.add_argument('--geth_network_id',type=int,default=2022,help='The network id to use when setting up the private ethereum network.')
     return parser.parse_args()
 
 def main():
@@ -238,7 +304,8 @@ def main():
     if platform.system() == 'Windows':
         #installGoLang(args)
         #installIPFS(args)
-        installIPFSClusterService(args)
+        #installIPFSClusterService(args)
+        installIPFSClusterControl(args)
         
 
         pass
