@@ -13,7 +13,7 @@ import subprocess
 import sys
 from zipfile import ZipFile
 
-from versions import go_version, ipfs_version
+from versions import go_version, ipfs_version, ipfs_cluster_version
 
 tmp_dir = os.path.join(os.path.dirname(os.path.normpath(sys.argv[0])),'.tmp')
 
@@ -84,7 +84,7 @@ def installIPFS(args):
         assert tmp_out[:12] == 'ipfs version','There appears to be an issue retrieving the IPFS version...'
     except:
         print("IPFS installation not found")
-    if not tmp_out:#TODO: remove not
+    if tmp_out:
         print("IPFS already installed: ",tmp_out)
     else:
         if not args.noinstall:
@@ -112,6 +112,7 @@ def installIPFS(args):
                 print("IPFS location already in PATH!")
             else:
                 output = subprocess.run(['setx','PATH',user_path.strip()+p+';']).stdout
+                
             
             #Generate Swarm Key for Private IPFS Network
             if args.generate_swarm_key:
@@ -162,6 +163,59 @@ def installIPFS(args):
     
     print("IPFS Installation Step Complete")
 
+def installIPFSClusterService(args):
+    global tmp_dir
+    ipfscluster_url = 'https://dist.ipfs.io/ipfs-cluster-service/v'+ipfs_cluster_version+'/'
+    ipfscluster_fname = 'ipfs-cluster-service_v'+ipfs_cluster_version+'_windows-amd64.zip'
+
+    tmp_out = None
+    try:
+        tmp_out = subprocess.run(['ipfs-cluster-service','version'],capture_output=True,text=True)
+        assert not 'command not found' in tmp_out, "There appears to be an issue retrieving the IPFS-Cluster-Service version..."
+    except:
+        print("IPFS-Cluster-Service installation not found")
+    
+    if not tmp_out: #TODO: Remove not
+        print("IPFS-Cluster-Service already installed: ", tmp_out)
+    else:
+        if not args.noinstall:
+            #Download IPFS Zip File
+            print("Acquiring IPFS-Cluster-Service...")
+            ipfscluster_fname = downloadFile(ipfscluster_url+ipfscluster_fname,tmp_dir)
+            print("Extracting contents to",Path.home()/'Apps'/os.path.splitext(ipfscluster_fname)[0])
+            with ZipFile(os.path.join(tmp_dir,ipfscluster_fname),'r') as zf:
+                zf.extractall(Path.home()/'Apps'/os.path.splitext(ipfscluster_fname)[0])
+            
+            #Add path to extracted folder to $PATH
+            print("Updating path...")
+            p = str(Path.home()/'Apps'/os.path.splitext(ipfscluster_fname)[0]/'ipfs-cluster-service')
+            user_path = subprocess.run(["powershell", "-Command","[Environment]::GetEnvironmentVariable('Path','User')"], capture_output=True,text=True).stdout
+            
+            found = False
+            for tmp_path in user_path.strip().split(';'):
+                if not tmp_path.strip():
+                    continue
+                if p == tmp_path:
+                    found = True
+                    break
+
+            if found:
+                print("IPFS-Cluster-Service location already in PATH!")
+            else:
+                output = subprocess.run(['setx','PATH',user_path.strip()+p+';']).stdout
+            
+            #Initialize Cluster Service
+            print("Initializing IPFS-Cluster-Service...")
+            if not os.path.isfile(Path.home()/'.ipfs-cluster'/'service.json'):
+                output = subprocess.run(['ipfs-cluster-service','init'])
+                print('Defaults generated to',str(Path.home()/'.ipfs-cluster'))
+            else:
+                print("Service configuration already exists! Skipping.")
+
+        print('NOTE: Other IPFS-Cluster Nodes must have the same value for "secret" in service.json!')
+        print('IPFS-Cluster-Service Installation Step Complete')
+            
+    pass
 
 def parseArgs():
     parser = argparse.ArgumentParser()
@@ -182,8 +236,9 @@ def main():
     os.makedirs(tmp_dir,exist_ok=True)
     
     if platform.system() == 'Windows':
-        installGoLang(args)
-        installIPFS(args)
+        #installGoLang(args)
+        #installIPFS(args)
+        installIPFSClusterService(args)
         
 
         pass
