@@ -7,6 +7,7 @@ import platform
 from re import sub
 import requests
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -14,8 +15,11 @@ from zipfile import ZipFile
 
 from versions import go_version, ipfs_version
 
-
 tmp_dir = os.path.join(os.path.dirname(os.path.normpath(sys.argv[0])),'.tmp')
+
+sys.path.append(os.path.abspath(os.path.join(tmp_dir,'../..')))
+
+from ipfs import IPFS
 
 def downloadFile(url,dest_dir):
     if not os.path.isdir(dest_dir):
@@ -67,6 +71,7 @@ def installGoLang(args):
             subprocess.run([
                 "msiexec","/i",os.path.join(tmp_dir,go_fname)
             ])
+    print("GoLang Installation Step Complete")
 
 def installIPFS(args):
     global tmp_dir
@@ -79,18 +84,20 @@ def installIPFS(args):
         assert tmp_out[:12] == 'ipfs version','There appears to be an issue retrieving the IPFS version...'
     except:
         print("IPFS installation not found")
-    if not tmp_out:
+    if not tmp_out:#TODO: remove not
         print("IPFS already installed: ",tmp_out)
     else:
         if not args.noinstall:
+            #Download IPFS Zip File
             print("Acquiring IPFS...")
             ipfs_fname = downloadFile(ipfs_url+ipfs_fname,tmp_dir)
             print("Extracting contents to",Path.home()/'Apps'/os.path.splitext(ipfs_fname)[0])
             with ZipFile(os.path.join(tmp_dir,ipfs_fname),'r') as zf:
-                zf.extractall(Path.home()/'Apps2'/os.path.splitext(ipfs_fname)[0])
-            #Add path to $PATH
+                zf.extractall(Path.home()/'Apps'/os.path.splitext(ipfs_fname)[0])
+            
+            #Add path to extracted folder to $PATH
             print("Updating path...")
-            p = str(Path.home()/'Apps2'/os.path.splitext(ipfs_fname)[0]/'go-ipfs')
+            p = str(Path.home()/'Apps'/os.path.splitext(ipfs_fname)[0]/'go-ipfs')
             user_path = subprocess.run(["powershell", "-Command","[Environment]::GetEnvironmentVariable('Path','User')"], capture_output=True,text=True).stdout
             
             found = False
@@ -106,6 +113,7 @@ def installIPFS(args):
             else:
                 output = subprocess.run(['setx','PATH',user_path.strip()+p+';']).stdout
             
+            #Generate Swarm Key for Private IPFS Network
             if args.generate_swarm_key:
                 print("Acquiring swarm key generator...")
                 subprocess.run(['go','install', 'github.com/Kubuxu/go-ipfs-swarm-key-gen/ipfs-swarm-key-gen@latest'])
@@ -119,7 +127,40 @@ def installIPFS(args):
                     with open(Path.home()/'.ipfs'/'swarm.key','w') as f:
                         f.write(output)
                     print("NOTE: The Swarm key must be copied to all new nodes joining the private network.")
+            
+            #Force Private Network with Environment Variable
+            print("Setting LIBP2P environment flag to force private IPFS networking...")
+            output = subprocess.run(['setx','LIBP2P_FORCE_PNET','1']).stdout
+            print(output)
 
+            #Initialize IPFS
+            print("Initializing IPFS...")
+            output = subprocess.run(['ipfs','init'],capture_output=True,text=True)
+            print(output.stdout)
+            print(output.stderr)
+
+            #Generate bootstrap
+            if args.ipfs_bootstrap_id:
+                bootstrap_addr = '/ip4/'+getPrimaryIP()+'/tcp/4001/ipfs/'
+                ipfs_ = IPFS()
+                proc = subprocess.Popen(['ipfs','daemon'])
+                node_id = ipfs_.execute_cmd('id',{}).json()['ID']
+                proc.send_signal(signal.CTRL_C_EVENT)
+                proc.send_signal(signal.CTRL_C_EVENT)
+                bootstrap_addr+=node_id
+                print("Saving textual copy of bootstrap address at",str(Path.home()/'.ipfs'/'bootstrap_id.txt'))
+                with open(Path.home()/'.ipfs'/'bootstrap_id.txt','w') as f:
+                    f.write(bootstrap_addr)
+                print('Removing current bootstrap targets')
+                output = subprocess.run(['ipfs','bootstrap','rm','--all'],capture_output=True,text=True)
+                print(output)
+
+                print('Adding private bootstrap node target')
+                output = subprocess.run(['ipfs','bootstrap','add',bootstrap_addr],capture_output=True,text=True)
+                print(output)
+                pass
+    
+    print("IPFS Installation Step Complete")
 
 
 def parseArgs():
@@ -127,6 +168,8 @@ def parseArgs():
     parser.add_argument('--noinstall',action='store_true',help='Prevents download and installation of packages')
     parser.add_argument('--clean',action='store_true',help='Removes any preexisting installation artifacts before checking and installing packages')
     parser.add_argument('--generate_swarm_key',action='store_true',help='Should be set for the first node in the network installing the software to generate a shared IPFS swarm key')
+    parser.add_argument('--ipfs_bootstrap_id',action='store_true',help='If set, will generate a bootstrap_id.txt file in the .ipfs folder to use with other node installations.')
+    parser.add_argument('--ipfs_bootstrap_file',type=str,help='Path to file with bootstrap ids to add to the current node. WILL OVERWRITE EXISTING BOOTSTRAP NODE DATA!')
     return parser.parse_args()
 
 def main():
@@ -139,9 +182,9 @@ def main():
     os.makedirs(tmp_dir,exist_ok=True)
     
     if platform.system() == 'Windows':
-        #installGoLang()
-        #installIPFS(args)
-        print(getPrimaryIP())
+        installGoLang(args)
+        installIPFS(args)
+        
 
         pass
     else: #NOTE: Currently not handling MacOS, just linux
