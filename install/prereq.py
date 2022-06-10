@@ -1,5 +1,6 @@
 
 import argparse
+import json
 import os
 import pathlib
 from pathlib import Path
@@ -11,15 +12,23 @@ import signal
 import socket
 import subprocess
 import sys
+import tkinter as tk
+from tkinter import filedialog, messagebox
 from zipfile import ZipFile
 
 from versions import go_version, ipfs_version, ipfs_cluster_version,geth_version
 
-tmp_dir = os.path.join(os.path.dirname(os.path.normpath(sys.argv[0])),'.tmp')
+tmp_dir = os.path.abspath(os.path.join(os.path.dirname(os.path.normpath(sys.argv[0])),'.tmp'))
 
 sys.path.append(os.path.abspath(os.path.join(tmp_dir,'../..')))
 
-from ipfs import IPFS, IPFSCluster
+from ipfs import IPFS
+
+tkroot = tk.Tk()
+#tkroot.overrideredirect(1)
+tkroot.withdraw()
+
+lPATH = os.getenv('PATH')
 
 def downloadFile(url,dest_dir):
     if not os.path.isdir(dest_dir):
@@ -52,7 +61,7 @@ def getPrimaryIP():
     return IP
 
 def installGoLang(args):
-    global tmp_dir
+    global tmp_dir,lPATH
     tmp_out = None
     go_url = 'https://go.dev/dl/'
     go_fname = 'go'+go_version+'.windows-amd64.msi'
@@ -68,16 +77,25 @@ def installGoLang(args):
         if not args.noinstall:
             print("Acquiring Go installer...")
             go_fname = downloadFile(go_url+go_fname,tmp_dir)
+            print(os.path.join(tmp_dir,go_fname))
             subprocess.run([
                 "msiexec","/i",os.path.join(tmp_dir,go_fname)
-            ])
+            ],capture_output=True)
+            messagebox.showinfo('Select Go bin Directory','Please select the bin folder of the Go installation used with the Go installer.')
+            go_path = filedialog.askdirectory()
+            if not go_path:
+                print("Cannot proceed without the bin directory location of the Go installation.")
+                exit(1)
+            lPATH += ';'+go_path+';'+str(Path.home()/'go'/'bin')
+            os.environ['PATH'] = lPATH
     print("GoLang Installation Step Complete")
 
 def installIPFS(args):
-    global tmp_dir
+    global tmp_dir,lPATH
     ipfs_url = 'https://github.com/ipfs/go-ipfs/releases/download/v'+ipfs_version+'/'
     ipfs_fname = 'go-ipfs_v'+ipfs_version+'_windows-amd64.zip'
-    
+    #user_path = subprocess.run(["powershell", "-Command","[Environment]::GetEnvironmentVariable('Path','User')"], capture_output=True,text=True).stdout
+    #print(user_path)
     tmp_out = None
     try:
         tmp_out = subprocess.run(['ipfs','version'],capture_output=True,text=True).stdout
@@ -111,21 +129,32 @@ def installIPFS(args):
             if found:
                 print("IPFS location already in PATH!")
             else:
-                output = subprocess.run(['setx','PATH',user_path.strip()+p+';']).stdout
-                
+                user_path = user_path.strip()
+                if not user_path[-1] == ';':
+                    user_path+=';'
+                output = subprocess.run(['setx','PATH',user_path+p+';']).stdout
+                lPATH += ';'+p
+                os.environ['PATH'] = lPATH
             
             #Generate Swarm Key for Private IPFS Network
             if args.generate_swarm_key:
                 print("Acquiring swarm key generator...")
-                subprocess.run(['go','install', 'github.com/Kubuxu/go-ipfs-swarm-key-gen/ipfs-swarm-key-gen@latest'])
+                print(subprocess.run(['go','install', 'github.com/Kubuxu/go-ipfs-swarm-key-gen/ipfs-swarm-key-gen@latest']).stdout)
                 if os.path.isfile(Path.home()/'.ipfs'/'swarm.key'):
                     print("Another swarm key already exists!")
                 else:
+                    dest = os.path.join(args.redist_path,'ipfs')
+                    if not os.path.isdir(dest):
+                        os.makedirs(dest)
+                    dest = os.path.join(dest,'swarm.key')
                     print('Generating swarm key to',Path.home()/'.ipfs'/'swarm.key')
                     if not os.path.isdir(Path.home()/'.ipfs'):
                         os.makedirs(Path.home()/'.ipfs')
                     output = subprocess.run(['ipfs-swarm-key-gen'],capture_output=True,text=True).stdout
                     with open(Path.home()/'.ipfs'/'swarm.key','w') as f:
+                        f.write(output)
+                    print("Writing to redistributable folder at",args.redist_path)
+                    with open(dest,'w') as f:
                         f.write(output)
                     print("NOTE: The Swarm key must be copied to all new nodes joining the private network.")
             
@@ -137,45 +166,64 @@ def installIPFS(args):
             #Initialize IPFS
             print("Initializing IPFS...")
             output = subprocess.run(['ipfs','init'],capture_output=True,text=True)
-            print(output.stdout)
-            print(output.stderr)
+            print(output.stdout,output.stderr)
 
             #Generate bootstrap
             if args.ipfs_bootstrap_id:
+                dest = os.path.join(args.redist_path,'ipfs')
+                if not os.path.isdir(dest):
+                    os.makedirs(dest)
+                dest = os.path.join(dest,'bootstrap_id.txt')
                 bootstrap_addr = '/ip4/'+getPrimaryIP()+'/tcp/4001/ipfs/'
                 ipfs_ = IPFS()
                 proc = subprocess.Popen(['ipfs','daemon'])
-                node_id = ipfs_.execute_cmd('id',{}).json()['ID']
-                proc.send_signal(signal.CTRL_C_EVENT)
-                proc.send_signal(signal.CTRL_C_EVENT)
+                node_id = None
+                while True:
+                    result = ipfs_.execute_cmd('id',{})
+                    if result.status_code == 200:
+                        node_id = result.json()['ID']
+                        break
+                #proc.send_signal(signal.CTRL_C_EVENT)
+                proc.terminate()
+                #proc.send_signal(signal.CTRL_C_EVENT)
                 bootstrap_addr+=node_id
-                print("Saving textual copy of bootstrap address at",str(Path.home()/'.ipfs'/'bootstrap_id.txt'))
-                with open(Path.home()/'.ipfs'/'bootstrap_id.txt','w') as f:
-                    f.write(bootstrap_addr)
+                #print("Saving textual copy of bootstrap address at",str(Path.home()/'.ipfs'/'bootstrap_id.txt'))
+                #with open(Path.home()/'.ipfs'/'bootstrap_id.txt','w') as f:
+                #    f.write(bootstrap_addr)
+                print("Saving textual copy of bootstrap address at",dest)
+                with open(dest,'a') as f:
+                    f.write(bootstrap_addr+"\n")
+
                 print('Removing current bootstrap targets')
                 output = subprocess.run(['ipfs','bootstrap','rm','--all'],capture_output=True,text=True)
-                print(output)
+                print(output.stdout,output.stderr)
 
-                print('Adding private bootstrap node target')
-                output = subprocess.run(['ipfs','bootstrap','add',bootstrap_addr],capture_output=True,text=True)
-                print(output)
-                pass
+                if not args.ipfs_bootstrap_file:
+                    print('Adding private bootstrap node target')
+                    output = subprocess.run(['ipfs','bootstrap','add',bootstrap_addr],capture_output=True,text=True)
+                    print(output.stdout,output.stderr)
+                else:
+                    if not os.path.isfile(args.ipfs_bootstrap_file):
+                        print("ERROR: Bootstrap file could not be found at",args.ipfs_bootstrap_file)
+                        print("Reverting to adding current node to bootstrap list.")
+                        output = subprocess.run(['ipfs','bootstrap','add',bootstrap_addr],capture_output=True,text=True)
+                        print(output.stdout,output.stderr)
     
     print("IPFS Installation Step Complete")
 
 def installIPFSClusterService(args):
-    global tmp_dir
+    global tmp_dir,lPATH
     ipfscluster_url = 'https://dist.ipfs.io/ipfs-cluster-service/v'+ipfs_cluster_version+'/'
     ipfscluster_fname = 'ipfs-cluster-service_v'+ipfs_cluster_version+'_windows-amd64.zip'
 
     tmp_out = None
     try:
-        tmp_out = subprocess.run(['ipfs-cluster-service','--version'],capture_output=True,text=True)
+        tmp_out = subprocess.run(['ipfs-cluster-service','--version'],capture_output=True,text=True).stdout
         assert 'ipfs-cluster-service' in tmp_out[:20], "There appears to be an issue retrieving the IPFS-Cluster-Service version..."
     except:
         print("IPFS-Cluster-Service installation not found")
     
-    if not tmp_out: #TODO: Remove not
+    if tmp_out: 
         print("IPFS-Cluster-Service already installed: ", tmp_out)
     else:
         if not args.noinstall:
@@ -202,8 +250,12 @@ def installIPFSClusterService(args):
             if found:
                 print("IPFS-Cluster-Service location already in PATH!")
             else:
-                output = subprocess.run(['setx','PATH',user_path.strip()+p+';']).stdout
+                output = subprocess.run(['setx','PATH',user_path.strip()+p+';'],capture_output=True,text=True)
+                print(output.stdout,output.stderr)
             
+            lPATH += ';'+p
+            os.environ['PATH'] = lPATH
+
             #Initialize Cluster Service
             print("Initializing IPFS-Cluster-Service...")
             if not os.path.isfile(Path.home()/'.ipfs-cluster'/'service.json'):
@@ -211,6 +263,25 @@ def installIPFSClusterService(args):
                 print('Defaults generated to',str(Path.home()/'.ipfs-cluster'))
             else:
                 print("Service configuration already exists! Skipping.")
+            
+            if args.cluster_secret_file and os.path.isfile(args.cluster_secret_file):
+                secret = open(args.cluster_secret_file,'r').read().strip()
+                f = json.load(open(Path.home()/'.ipfs-cluster'/'service.json'))
+                f['cluster']['secret'] = secret
+                json.dump(f,open(Path.home()/'.ipfs-cluster'/'service.json','w'))
+                print("Wrote secret from",args.cluster_secret_file,'to',str(Path.home()/'.ipfs-cluster'/'service.json'))
+            else:
+                #NOTE: For actual deployment, generate new cluster secret. For now use the default
+                pass
+
+            #Store Cluster Secret
+            cluster_secret = json.load(open(Path.home()/'.ipfs-cluster'/'service.json'))["cluster"]["secret"]
+            dest = os.path.join(args.redist_path,'ipfs-cluster')
+            if not os.path.isdir(dest):
+                os.makedirs(dest)
+            dest = os.path.join(dest,'cluster_secret')
+            with open(dest,'w') as f:
+                f.write(cluster_secret.strip())
 
         print('NOTE: Other IPFS-Cluster Nodes must have the same value for "secret" in service.json!')
         print('NOTE: Bootstrapping may be necessary depending on network topology. If so, start the daemon with ipfs-cluster-service --bootstrap <ClusterPeerMultiAddress1,...>')
@@ -280,16 +351,25 @@ def installGeth(args):
         if not args.noinstall:
             print("Acquiring Geth Installer...")
             geth_fname = downloadFile(geth_url+geth_fname,tmp_dir)
-            subprocess.run(['msiexec','/i',os.path.join(tmp_dir,geth_fname)])
+            subprocess.run(['start','""','/wait','msiexec','/i',os.path.join(tmp_dir,geth_fname)])
+
+            #TODO:Create Account
+            #TODO:Genesis block creation
+            #TODO:Genesis block signer option
+            #TODO:Init Geth Database
+            #TODO:Install py-solc-x
 
 def parseArgs():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--redist_path',type=str,default='./redist',help='Path to folder which will contain files intended to be used for installations on other peer nodes.')
     parser.add_argument('--noinstall',action='store_true',help='Prevents download and installation of packages')
     parser.add_argument('--clean',action='store_true',help='Removes any preexisting installation artifacts before checking and installing packages')
     parser.add_argument('--generate_swarm_key',action='store_true',help='Should be set for the first node in the network installing the software to generate a shared IPFS swarm key')
-    parser.add_argument('--ipfs_bootstrap_id',action='store_true',help='If set, will generate a bootstrap_id.txt file in the .ipfs folder to use with other node installations.')
-    parser.add_argument('--ipfs_bootstrap_file',type=str,help='Path to file with bootstrap ids to add to the current node. WILL OVERWRITE EXISTING BOOTSTRAP NODE DATA!')
+    parser.add_argument('--ipfs_bootstrap_id',action='store_true',help='If set, will generate a bootstrap_id.txt file in the redist folder to use with other node installations.')
+    parser.add_argument('--ipfs_bootstrap_file',type=str,default='',help='Path to file with bootstrap ids to add to the current node. WILL OVERWRITE EXISTING BOOTSTRAP NODE DATA!')
+    parser.add_argument('--cluster_secret_file',type=str,default='',help='If provided, the system will use the cluster secret value from the file instead of generating a new value when configuring IPFS-Cluster')
     parser.add_argument('--geth_network_id',type=int,default=2022,help='The network id to use when setting up the private ethereum network.')
+    parser.add_argument('--geth_generate_genesis_block',action='store_true',help='If set, creates the genesis.json file for the Clique. This will also add the node as a signer.')
     return parser.parse_args()
 
 def main():
@@ -302,12 +382,10 @@ def main():
     os.makedirs(tmp_dir,exist_ok=True)
     
     if platform.system() == 'Windows':
-        #installGoLang(args)
-        #installIPFS(args)
-        #installIPFSClusterService(args)
+        installGoLang(args)
+        installIPFS(args)
+        installIPFSClusterService(args)
         installIPFSClusterControl(args)
-        
-
         pass
     else: #NOTE: Currently not handling MacOS, just linux
         pass
