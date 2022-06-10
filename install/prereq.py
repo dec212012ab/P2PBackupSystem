@@ -81,11 +81,29 @@ def installGoLang(args):
             subprocess.run([
                 "msiexec","/i",os.path.join(tmp_dir,go_fname)
             ],capture_output=True)
-            messagebox.showinfo('Select Go bin Directory','Please select the bin folder of the Go installation used with the Go installer.')
+            messagebox.showinfo('Select Go bin Directory','Please select the bin folder of the Go installation used with the Go installer.',parent=tkroot)
             go_path = filedialog.askdirectory()
             if not go_path:
                 print("Cannot proceed without the bin directory location of the Go installation.")
                 exit(1)
+            
+            print("Updating path...")
+            user_path = subprocess.run(["powershell", "-Command","[Environment]::GetEnvironmentVariable('Path','User')"], capture_output=True,text=True).stdout
+            
+            found = False
+            for tmp_path in user_path.strip().split(';'):
+                if not tmp_path.strip():
+                    continue
+                if go_path == tmp_path:
+                    found = True
+                    break
+
+            if found:
+                print("IPFS-Cluster-Service location already in PATH!")
+            else:
+                output = subprocess.run(['setx','PATH',user_path.strip()+go_path+';'],capture_output=True,text=True)
+                print(output.stdout,output.stderr)
+            
             lPATH += ';'+go_path+';'+str(Path.home()/'go'/'bin')
             os.environ['PATH'] = lPATH
     print("GoLang Installation Step Complete")
@@ -190,10 +208,7 @@ def installIPFS(args):
                 #print("Saving textual copy of bootstrap address at",str(Path.home()/'.ipfs'/'bootstrap_id.txt'))
                 #with open(Path.home()/'.ipfs'/'bootstrap_id.txt','w') as f:
                 #    f.write(bootstrap_addr)
-                print("Saving textual copy of bootstrap address at",dest)
-                with open(dest,'a') as f:
-                    f.write(bootstrap_addr+"\n")
-
+                
                 print('Removing current bootstrap targets')
                 output = subprocess.run(['ipfs','bootstrap','rm','--all'],capture_output=True,text=True)
                 print(output.stdout,output.stderr)
@@ -202,12 +217,28 @@ def installIPFS(args):
                     print('Adding private bootstrap node target')
                     output = subprocess.run(['ipfs','bootstrap','add',bootstrap_addr],capture_output=True,text=True)
                     print(output.stdout,output.stderr)
+                    print("Saving textual copy of bootstrap address at",dest)
+                    with open(dest,'a') as f:
+                        f.write(bootstrap_addr+"\n")
                 else:
                     if not os.path.isfile(args.ipfs_bootstrap_file):
                         print("ERROR: Bootstrap file could not be found at",args.ipfs_bootstrap_file)
                         print("Reverting to adding current node to bootstrap list.")
                         output = subprocess.run(['ipfs','bootstrap','add',bootstrap_addr],capture_output=True,text=True)
                         print(output.stdout,output.stderr)
+                        print("Saving textual copy of bootstrap address at",dest)
+                        with open(dest,'a') as f:
+                            f.write(bootstrap_addr+"\n")
+                    else:
+                        with open(args.ipfs_bootstrap_file,'r') as f:
+                            entries = f.readlines()
+                            for item in entries:
+                                item = item.strip()
+                                if not item:
+                                    continue
+                                print("Adding bootstrap address:",item)
+                                output = subprocess.run(['ipfs','bootstrap','add',item],capture_output=True,text=True)
+                                print(output.stdout,output.stderr)
     
     print("IPFS Installation Step Complete")
 
@@ -301,7 +332,7 @@ def installIPFSClusterControl(args):
     except:
         print("IPFS-Cluster-Ctl installation not found")
     
-    if not tmp_out: #TODO: Remove not
+    if tmp_out:
         print("IPFS-Cluster-Ctl already installed: ", tmp_out)
     else:
         if not args.noinstall:
