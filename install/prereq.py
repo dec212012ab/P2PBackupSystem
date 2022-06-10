@@ -1,5 +1,6 @@
 
 import argparse
+import ctypes
 import json
 import os
 import pathlib
@@ -13,7 +14,7 @@ import socket
 import subprocess
 import sys
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, simpledialog
 from zipfile import ZipFile
 
 from versions import go_version, ipfs_version, ipfs_cluster_version,geth_version
@@ -60,6 +61,12 @@ def getPrimaryIP():
         s.close()
     return IP
 
+def isAdmin():
+    try:
+        return ctypes.windll.shell32.IsUserAnAdmin()
+    except:
+        return False
+
 def installGoLang(args):
     global tmp_dir,lPATH
     tmp_out = None
@@ -99,7 +106,7 @@ def installGoLang(args):
                     break
 
             if found:
-                print("IPFS-Cluster-Service location already in PATH!")
+                print("Go location already in PATH!")
             else:
                 output = subprocess.run(['setx','PATH',user_path.strip()+go_path+';'],capture_output=True,text=True)
                 print(output.stdout,output.stderr)
@@ -357,7 +364,7 @@ def installIPFSClusterControl(args):
                     break
 
             if found:
-                print("IPFS-Cluster-Service location already in PATH!")
+                print("IPFS-Cluster-Ctl location already in PATH!")
             else:
                 output = subprocess.run(['setx','PATH',user_path.strip()+p+';']).stdout
             
@@ -366,6 +373,7 @@ def installIPFSClusterControl(args):
     pass
 
 def installGeth(args):
+    global tmp_dir, lPATH
     geth_url = 'https://gethstore.blob.core.windows.net/builds/'
     geth_fname = 'geth-windows-amd64-'+geth_version+'.exe'
     
@@ -376,19 +384,77 @@ def installGeth(args):
     except:
         print("Geth installation not found")
     
-    if tmp_out:
+    if not tmp_out:
         print('Geth already installed: ',tmp_out)
     else:
         if not args.noinstall:
             print("Acquiring Geth Installer...")
             geth_fname = downloadFile(geth_url+geth_fname,tmp_dir)
-            subprocess.run(['start','""','/wait','msiexec','/i',os.path.join(tmp_dir,geth_fname)])
+            #subprocess.run([os.path.join(tmp_dir,geth_fname)],capture_output=True)
 
-            #TODO:Create Account
+            #Update Local Process Path
+            messagebox.showinfo('Select Geth Directory','Please select the folder containing geth.exe.',parent=tkroot)
+            geth_path = filedialog.askdirectory()
+            if not geth_path:
+                print("Cannot proceed without the bin directory location of the geth executable.")
+                exit(1)
+            
+            print("Updating path...")
+            user_path = subprocess.run(["powershell", "-Command","[Environment]::GetEnvironmentVariable('Path','User')"], capture_output=True,text=True).stdout
+            
+            found = False
+            for tmp_path in user_path.strip().split(';'):
+                if not tmp_path.strip():
+                    continue
+                if geth_path == tmp_path:
+                    found = True
+                    break
+
+            if found:
+                print("Geth location already in PATH!")
+            else:
+                output = subprocess.run(['setx','PATH',user_path.strip()+geth_path+';'],capture_output=True,text=True)
+                print(output.stdout,output.stderr)
+            
+            lPATH += ';'+geth_path+';'+str(Path.home()/'go'/'bin')
+            os.environ['PATH'] = lPATH
+
+            #Create ethereum base directory
+            eth_path = str(Path.home()/'.eth')
+            if not os.path.isdir(eth_path):
+                os.makedirs(eth_path)
+            
+            data_dir = os.path.join(eth_path,'node')
+
+            #Check for pswd file to use for account creation else generate a new one.
+            pswd = None
+            while True:
+                pswd = simpledialog.askstring("Create New Geth Account Password",'Enter New Geth Account Password',show='*')
+                if not pswd is None and not pswd:
+                    messagebox.showerror("Geth Password",'Password cannot be empty!')
+                elif pswd is None:
+                    response = messagebox.askyesno("Geth Password",'Cannot create local Geth installation without an account password. Abort installation?')
+                    if response:
+                        exit(0)
+                else:
+                    break
+            
+            with open('./.tmp/node','w') as f:
+                f.write(pswd)
+
+
+            #Create Account
+            output = subprocess.run(['geth','account','new','--datadir',data_dir,'--password','./.tmp/node'],capture_output=True,text=True)
+            print(output.stdout,output.stderr)
+
+            os.remove('./.tmp/node')
+
             #TODO:Genesis block creation
             #TODO:Genesis block signer option
             #TODO:Init Geth Database
             #TODO:Install py-solc-x
+    
+    print("Geth Installation Complete")
 
 def parseArgs():
     parser = argparse.ArgumentParser()
@@ -401,6 +467,7 @@ def parseArgs():
     parser.add_argument('--cluster_secret_file',type=str,default='',help='If provided, the system will use the cluster secret value from the file instead of generating a new value when configuring IPFS-Cluster')
     parser.add_argument('--geth_network_id',type=int,default=2022,help='The network id to use when setting up the private ethereum network.')
     parser.add_argument('--geth_generate_genesis_block',action='store_true',help='If set, creates the genesis.json file for the Clique. This will also add the node as a signer.')
+    #parser.add_argument('--geth_password_file',type=str,default=str(Path.home()/'.eth'/'node_pswd'),help='File with password to use when setting up a new Geth account.')
     return parser.parse_args()
 
 def main():
@@ -413,10 +480,16 @@ def main():
     os.makedirs(tmp_dir,exist_ok=True)
     
     if platform.system() == 'Windows':
-        installGoLang(args)
-        installIPFS(args)
-        installIPFSClusterService(args)
-        installIPFSClusterControl(args)
+        if not isAdmin():
+            #installGoLang(args)
+            #installIPFS(args)
+            #installIPFSClusterService(args)
+            #installIPFSClusterControl(args)
+            installGeth(args)
+        else:
+            print("Relaunching as admin")
+            a = ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(sys.argv), None, 1)
+            print(a)
         pass
     else: #NOTE: Currently not handling MacOS, just linux
         pass
