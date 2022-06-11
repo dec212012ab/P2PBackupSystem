@@ -5,6 +5,7 @@ import json
 import os
 import pathlib
 from pathlib import Path
+#import pip._internal as pip
 import platform
 from re import sub
 import requests
@@ -426,33 +427,113 @@ def installGeth(args):
             
             data_dir = os.path.join(eth_path,'node')
 
-            #Check for pswd file to use for account creation else generate a new one.
-            pswd = None
-            while True:
-                pswd = simpledialog.askstring("Create New Geth Account Password",'Enter New Geth Account Password',show='*')
-                if not pswd is None and not pswd:
-                    messagebox.showerror("Geth Password",'Password cannot be empty!')
-                elif pswd is None:
-                    response = messagebox.askyesno("Geth Password",'Cannot create local Geth installation without an account password. Abort installation?')
-                    if response:
-                        exit(0)
-                else:
-                    break
+            if not args.skip_geth_user_creation:
+                #Check for pswd file to use for account creation else generate a new one.
+                acct_name = None
+                while True:
+                    acct_name = simpledialog.askstring("Create New Geth Account",'Enter New Geth Account Name').strip()
+                    
+                    if not acct_name is None and not acct_name:
+                        messagebox.showerror("Geth Account Name",'Account name cannot be empty!')
+                    elif pswd is None:
+                        response = messagebox.askyesno("Geth Account Name",'Cannot create local Geth installation without an account name. Abort installation?')
+                        if response:
+                            exit(0)
+                    else:
+                        forbidden_chars = '< > : " / \\ | ? *'.split(' ')
+                        forbidden_chars += [chr(i) for i in range(31)]
+                        reserved_names = 'CON, PRN, AUX, NUL, COM0, COM1, COM2, COM3, COM4, COM5, COM6, COM7, COM8, COM9, LPT0, LPT1, LPT2, LPT3, LPT4, LPT5, LPT6, LPT7, LPT8, LPT9'.replace(',','').split(' ')
+                        if acct_name in reserved_names:
+                            messagebox.showerror("Name Error",'Cannot use reserved name ' + acct_name + '!')
+                            continue
+                        valid = True
+                        for c in forbidden_chars:
+                            if c in acct_name:
+                                messagebox.showerror("Name Error","File name uses illegal characters!")
+                                valid = False
+                                break
+                        if not valid:
+                            continue
+                        break
+                pswd = None
+                while True:
+                    pswd = simpledialog.askstring("Create New Geth Account Password",'Enter New Geth Account Password',show='*')
+                    if not pswd is None and not pswd:
+                        messagebox.showerror("Geth Password",'Password cannot be empty!')
+                    elif pswd is None:
+                        response = messagebox.askyesno("Geth Password",'Cannot create local Geth installation without an account password. Abort installation?')
+                        if response:
+                            exit(0)
+                    else:
+                        break
+                
+                with open('./.tmp/'+acct_name,'w') as f:
+                    f.write(pswd)
+
+                if args.save_geth_password:
+                    with open(args.save_geth_password,'w') as f:
+                        f.write(acct_name+' - '+pswd)
+
+                #Create Account
+                output = subprocess.run(['geth','account','new','--datadir',data_dir,'--password','./.tmp/node'],capture_output=True,text=True)
+                print(output.stdout,output.stderr)
+                os.remove('./.tmp/node')
+
+            #Genesis block creation
+            if args.geth_generate_genesis_block:
+                #Get account identity
+                output = subprocess.run(['geth','account','list','--keystore',os.path.join(data_dir,'keystore')],capture_output=True,text=True)
+                output_lines = [line for line in output.stdout.splitlines() if 'Account #' in line]
+                output_lines = [line[13:53] for line in output_lines]
+
+                signer_ids = '0x'+str('0'*64)+''.join(output_lines)+str('0'*130)
+                genesis_json = {
+                    "config": {
+                        "chainId": args.geth_network_id,
+                        "homesteadBlock": 0,
+                        "eip150Block": 0,
+                        "eip155Block": 0,
+                        "eip158Block": 0,
+                        "byzantiumBlock": 0,
+                        "constantinopleBlock": 0,
+                        "petersburgBlock": 0,
+                        "clique": {
+                            "period": 5,
+                            "epoch": 30000
+                        }
+                    },
+                    "difficulty": "1",
+                    "gasLimit": "8000000",
+                    "alloc": {}
+                }
+                genesis_json['extradata'] = signer_ids
+                for signer in output_lines:
+                    genesis_json['alloc'][signer] = {'balance':str(int(9e9))}
+
+                json.dump(genesis_json,open(os.path.join(eth_path,'genesis.json'),'w'),sort_keys=True,indent=4)
+
+                #Init Geth Database
+                output = subprocess.run(['geth','init','--datadir',data_dir,os.path.join(eth_path,'genesis.json')],capture_output=True,text=True)
+                print(output.stdout,output.stderr)
+                print("Genesis Block created and deployed")
+
+            #Install py-solc-x
+            try:
+                import web3
+            except ImportError:
+                print('Installing python package \'web3\'')
+                output = subprocess.run([sys.executable,'-m','pip','install','web3','--upgrade'],capture_output=True,text=True)
+                print(output.stdout,output.stderr)
+            try:
+                import solcx
+            except ImportError:
+                print('Installing python package \'py-solc-x\'')
+                output = subprocess.run([sys.executable,'-m','pip','install','py-solc-x','--upgrade'],capture_output=True,text=True)
+                print(output.stdout,output.stderr)
             
-            with open('./.tmp/node','w') as f:
-                f.write(pswd)
-
-
-            #Create Account
-            output = subprocess.run(['geth','account','new','--datadir',data_dir,'--password','./.tmp/node'],capture_output=True,text=True)
-            print(output.stdout,output.stderr)
-
-            os.remove('./.tmp/node')
-
-            #TODO:Genesis block creation
-            #TODO:Genesis block signer option
-            #TODO:Init Geth Database
-            #TODO:Install py-solc-x
+            print('Installing Solidity Compiler')
+            from solcx import install_solc
+            print(install_solc())
     
     print("Geth Installation Complete")
 
@@ -467,7 +548,13 @@ def parseArgs():
     parser.add_argument('--cluster_secret_file',type=str,default='',help='If provided, the system will use the cluster secret value from the file instead of generating a new value when configuring IPFS-Cluster')
     parser.add_argument('--geth_network_id',type=int,default=2022,help='The network id to use when setting up the private ethereum network.')
     parser.add_argument('--geth_generate_genesis_block',action='store_true',help='If set, creates the genesis.json file for the Clique. This will also add the node as a signer.')
-    #parser.add_argument('--geth_password_file',type=str,default=str(Path.home()/'.eth'/'node_pswd'),help='File with password to use when setting up a new Geth account.')
+    parser.add_argument('--save_geth_password',type=str,default='',help='If non-empty, the password used for the new account is written to the specified file path.')
+    parser.add_argument('--skip_geth_user_creation',action='store_true',help='If set, skip the user creation steps when installing Geth')
+    parser.add_argument('--skip_golang',action='store_true',help='If set will skip the Go installation step')
+    parser.add_argument('--skip_ipfs',action='store_true',help='If set will skip the IPFS installation step')
+    parser.add_argument('--skip_ipfs_cluster_service',action='store_true',help='If set will skip the IPFS-Cluster-Service installation step')
+    parser.add_argument('--skip_ipfs_cluster_ctl',action='store_true',help='If set will skip the IPFS-Cluster-Ctl installation step')
+    parser.add_argument('--skip_geth',action='store_true',help='If set will skip the go-ethereum (Geth) client installation step')
     return parser.parse_args()
 
 def main():
@@ -481,17 +568,23 @@ def main():
     
     if platform.system() == 'Windows':
         if not isAdmin():
-            #installGoLang(args)
-            #installIPFS(args)
-            #installIPFSClusterService(args)
-            #installIPFSClusterControl(args)
-            installGeth(args)
+            if not args.skip_golang:
+                installGoLang(args)
+            if not args.skip_ipfs:
+                installIPFS(args)
+            if not args.skip_ipfs_cluster_service:
+                installIPFSClusterService(args)
+            if not args.skip_ipfs_cluster_ctl:
+                installIPFSClusterControl(args)
+            if not args.skip_geth:
+                installGeth(args)
         else:
             print("Relaunching as admin")
             a = ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(sys.argv), None, 1)
             print(a)
         pass
     else: #NOTE: Currently not handling MacOS, just linux
+        #TODO: Add platform-specific install steps as branches within the install functions
         pass
 
 if __name__ == '__main__':
