@@ -385,7 +385,7 @@ def installGeth(args):
     except:
         print("Geth installation not found")
     
-    if not tmp_out:
+    if tmp_out:
         print('Geth already installed: ',tmp_out)
     else:
         if not args.noinstall:
