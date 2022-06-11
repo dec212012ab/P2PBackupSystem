@@ -435,7 +435,7 @@ def installGeth(args):
                     
                     if not acct_name is None and not acct_name:
                         messagebox.showerror("Geth Account Name",'Account name cannot be empty!')
-                    elif pswd is None:
+                    elif acct_name is None:
                         response = messagebox.askyesno("Geth Account Name",'Cannot create local Geth installation without an account name. Abort installation?')
                         if response:
                             exit(0)
@@ -475,9 +475,9 @@ def installGeth(args):
                         f.write(acct_name+' - '+pswd)
 
                 #Create Account
-                output = subprocess.run(['geth','account','new','--datadir',data_dir,'--password','./.tmp/node'],capture_output=True,text=True)
+                output = subprocess.run(['geth','account','new','--datadir',data_dir,'--password','./.tmp/'+acct_name],capture_output=True,text=True)
                 print(output.stdout,output.stderr)
-                os.remove('./.tmp/node')
+                os.remove('./.tmp/'+acct_name)
 
             #Genesis block creation
             if args.geth_generate_genesis_block:
