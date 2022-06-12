@@ -14,6 +14,7 @@ import signal
 import socket
 import subprocess
 import sys
+import tarfile
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog
 from zipfile import ZipFile
@@ -31,6 +32,7 @@ tkroot = tk.Tk()
 tkroot.withdraw()
 
 lPATH = os.getenv('PATH')
+home_dir = None
 
 def downloadFile(url,dest_dir):
     if not os.path.isdir(dest_dir):
@@ -63,16 +65,26 @@ def getPrimaryIP():
     return IP
 
 def isAdmin():
-    try:
-        return ctypes.windll.shell32.IsUserAnAdmin()
-    except:
-        return False
+    if platform.system() == 'Windows':
+        try:
+            return ctypes.windll.shell32.IsUserAnAdmin()
+        except:
+            return False
+    else:
+        #Assume Ubuntu for now
+        return os.getuid()==0
+
+def isWindows():
+    return platform.system() == 'Windows'
 
 def installGoLang(args):
     global tmp_dir,lPATH
     tmp_out = None
     go_url = 'https://go.dev/dl/'
-    go_fname = 'go'+go_version+'.windows-amd64.msi'
+    if isWindows():
+        go_fname = 'go'+go_version+'.windows-amd64.msi'
+    else:
+        go_fname = 'go'+go_version+'.linux-amd64.tar.gz'
 
     try:
         tmp_out = subprocess.run(['go','version'],capture_output=True,text=True).stdout
@@ -86,34 +98,60 @@ def installGoLang(args):
             print("Acquiring Go installer...")
             go_fname = downloadFile(go_url+go_fname,tmp_dir)
             print(os.path.join(tmp_dir,go_fname))
-            subprocess.run([
-                "msiexec","/i",os.path.join(tmp_dir,go_fname)
-            ],capture_output=True)
-            messagebox.showinfo('Select Go bin Directory','Please select the bin folder of the Go installation used with the Go installer.',parent=tkroot)
-            go_path = filedialog.askdirectory()
-            if not go_path:
-                print("Cannot proceed without the bin directory location of the Go installation.")
-                exit(1)
+            if isWindows():
+                subprocess.run([
+                    "msiexec","/i",os.path.join(tmp_dir,go_fname)
+                ],capture_output=True)
+                messagebox.showinfo('Select Go bin Directory','Please select the bin folder of the Go installation used with the Go installer.',parent=tkroot)
+                go_path = filedialog.askdirectory()
+                if not go_path:
+                    print("Cannot proceed without the bin directory location of the Go installation.")
+                    exit(1)
+            else:
+                f = tarfile.open(os.path.join(tmp_dir,go_fname))
+                f.extractall('/usr/local')
+                f.close()
+                go_path = '/usr/local/go'
+                print("Extracted go installation to",go_path)
+                       
             
             print("Updating path...")
-            user_path = subprocess.run(["powershell", "-Command","[Environment]::GetEnvironmentVariable('Path','User')"], capture_output=True,text=True).stdout
-            
-            found = False
-            for tmp_path in user_path.strip().split(';'):
-                if not tmp_path.strip():
-                    continue
-                if go_path == tmp_path:
-                    found = True
-                    break
+            if platform.system() =='Windows':
+                user_path = subprocess.run(["powershell", "-Command","[Environment]::GetEnvironmentVariable('Path','User')"], capture_output=True,text=True).stdout
+                
+                found = False
+                for tmp_path in user_path.strip().split(';'):
+                    if not tmp_path.strip():
+                        continue
+                    if go_path == tmp_path:
+                        found = True
+                        break
 
-            if found:
-                print("Go location already in PATH!")
+                if found:
+                    print("Go location already in PATH!")
+                else:
+                    output = subprocess.run(['setx','PATH',user_path.strip()+go_path+';'],capture_output=True,text=True)
+                    print(output.stdout,output.stderr)
+                
+                lPATH += ';'+go_path+';'+str(Path.home()/'go'/'bin')
+                os.environ['PATH'] = lPATH
             else:
-                output = subprocess.run(['setx','PATH',user_path.strip()+go_path+';'],capture_output=True,text=True)
-                print(output.stdout,output.stderr)
-            
-            lPATH += ';'+go_path+';'+str(Path.home()/'go'/'bin')
-            os.environ['PATH'] = lPATH
+                found = False
+                for tmp_path in os.environ['PATH'].split(':'):
+                    if not tmp_path.strip():
+                        continue
+                    if os.path.normpath(go_path) == os.path.normpath(tmp_path):
+                        found=True
+                        break
+                
+                if found:
+                    print("Go location already in PATH!")
+                else:
+                    go_path = os.path.join(go_path,'bin')
+                    with open(os.path.join(home_dir,'.bashrc'),'a') as f:
+                        f.write('export PATH=$PATH:'+go_path+'\n')
+                    os.environ["PATH"] +=':'+go_path
+                pass
     print("GoLang Installation Step Complete")
 
 def installIPFS(args):
@@ -558,7 +596,7 @@ def parseArgs():
     return parser.parse_args()
 
 def main():
-    global tmp_dir
+    global tmp_dir, home_dir
     args = parseArgs()
     if args.clean:
         if os.path.isdir(tmp_dir):
@@ -582,9 +620,16 @@ def main():
             print("Relaunching as admin")
             a = ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(sys.argv), None, 1)
             print(a)
-        pass
-    else: #NOTE: Currently not handling MacOS, just linux
+    else: #NOTE: Currently not handling MacOS, just linux, more specifically just Ubuntu for now
         #TODO: Add platform-specific install steps as branches within the install functions
+        if not isAdmin():
+            print("Please re-run installer with sudo.")
+            exit(0)
+        else:
+            home_dir = os.path.expanduser('~'+os.environ['SUDO_USER'])
+            if not args.skip_golang:
+                installGoLang(args)
+            pass
         pass
 
 if __name__ == '__main__':
