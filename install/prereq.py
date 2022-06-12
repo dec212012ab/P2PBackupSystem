@@ -32,7 +32,7 @@ tkroot = tk.Tk()
 tkroot.withdraw()
 
 lPATH = os.getenv('PATH')
-home_dir = None
+home_dir = None #Used to deal with Path.home() pointing to the root user on Ubuntu when using sudo. Init in main()
 
 def downloadFile(url,dest_dir):
     if not os.path.isdir(dest_dir):
@@ -109,14 +109,14 @@ def installGoLang(args):
                     exit(1)
             else:
                 f = tarfile.open(os.path.join(tmp_dir,go_fname))
-                f.extractall('/usr/local')
+                f.extractall(Path.home()/'Apps')
                 f.close()
-                go_path = '/usr/local/go'
+                go_path = str(Path.home()/'Apps'/'go')
                 print("Extracted go installation to",go_path)
                        
             
             print("Updating path...")
-            if platform.system() =='Windows':
+            if isWindows():
                 user_path = subprocess.run(["powershell", "-Command","[Environment]::GetEnvironmentVariable('Path','User')"], capture_output=True,text=True).stdout
                 
                 found = False
@@ -147,17 +147,24 @@ def installGoLang(args):
                 if found:
                     print("Go location already in PATH!")
                 else:
-                    go_path = os.path.join(go_path,'bin')
                     with open(os.path.join(home_dir,'.bashrc'),'a') as f:
-                        f.write('export PATH=$PATH:'+go_path+'\n')
-                    os.environ["PATH"] +=':'+go_path
+                        f.write('\nexport GOROOT='+go_path+'\n')
+                        f.write('export GOPATH='+os.path.join(home_dir,'go')+'\n')
+                        f.write('export PATH=$PATH:$GOROOT/bin:$GOPATH/bin\n')
+                    os.environ["GOROOT"] = go_path
+                    os.environ['GOPATH'] = os.path.join(home_dir,'go')
+                    os.environ["PATH"] +=':'+os.path.join(go_path,'bin')
+                    os.environ["PATH"] +=':'+os.path.join(home_dir,'go/bin')
                 pass
     print("GoLang Installation Step Complete")
 
 def installIPFS(args):
     global tmp_dir,lPATH
     ipfs_url = 'https://github.com/ipfs/go-ipfs/releases/download/v'+ipfs_version+'/'
-    ipfs_fname = 'go-ipfs_v'+ipfs_version+'_windows-amd64.zip'
+    if isWindows():
+        ipfs_fname = 'go-ipfs_v'+ipfs_version+'_windows-amd64.zip'
+    else:
+        ipfs_fname = 'go-ipfs_v'+ipfs_version+'_linux-amd64.tar.gz'
     #user_path = subprocess.run(["powershell", "-Command","[Environment]::GetEnvironmentVariable('Path','User')"], capture_output=True,text=True).stdout
     #print(user_path)
     tmp_out = None
@@ -173,33 +180,56 @@ def installIPFS(args):
             #Download IPFS Zip File
             print("Acquiring IPFS...")
             ipfs_fname = downloadFile(ipfs_url+ipfs_fname,tmp_dir)
-            print("Extracting contents to",Path.home()/'Apps'/os.path.splitext(ipfs_fname)[0])
-            with ZipFile(os.path.join(tmp_dir,ipfs_fname),'r') as zf:
-                zf.extractall(Path.home()/'Apps'/os.path.splitext(ipfs_fname)[0])
+            if isWindows():
+                print("Extracting contents to",Path.home()/'Apps'/os.path.splitext(ipfs_fname)[0])
+                with ZipFile(os.path.join(tmp_dir,ipfs_fname),'r') as zf:
+                    zf.extractall(Path.home()/'Apps'/os.path.splitext(ipfs_fname)[0])
+            else:
+                print("Extracting to"+str(Path.home()/'Apps'/ipfs_fname).replace('.tar.gz',''))
+                f = tarfile.open(os.path.join(tmp_dir,ipfs_fname))
+                f.extractall(Path.home()/'Apps')
+                f.close()
             
             #Add path to extracted folder to $PATH
             print("Updating path...")
-            p = str(Path.home()/'Apps'/os.path.splitext(ipfs_fname)[0]/'go-ipfs')
-            user_path = subprocess.run(["powershell", "-Command","[Environment]::GetEnvironmentVariable('Path','User')"], capture_output=True,text=True).stdout
-            
-            found = False
-            for tmp_path in user_path.strip().split(';'):
-                if not tmp_path.strip():
-                    continue
-                if p == tmp_path:
-                    found = True
-                    break
+            if isWindows():
+                p = str(Path.home()/'Apps'/os.path.splitext(ipfs_fname)[0]/'go-ipfs')
+                user_path = subprocess.run(["powershell", "-Command","[Environment]::GetEnvironmentVariable('Path','User')"], capture_output=True,text=True).stdout
+                
+                found = False
+                for tmp_path in user_path.strip().split(';'):
+                    if not tmp_path.strip():
+                        continue
+                    if p == tmp_path:
+                        found = True
+                        break
 
-            if found:
-                print("IPFS location already in PATH!")
+                if found:
+                    print("IPFS location already in PATH!")
+                else:
+                    user_path = user_path.strip()
+                    if not user_path[-1] == ';':
+                        user_path+=';'
+                    output = subprocess.run(['setx','PATH',user_path+p+';']).stdout
+                    lPATH += ';'+p
+                    os.environ['PATH'] = lPATH
             else:
-                user_path = user_path.strip()
-                if not user_path[-1] == ';':
-                    user_path+=';'
-                output = subprocess.run(['setx','PATH',user_path+p+';']).stdout
-                lPATH += ';'+p
-                os.environ['PATH'] = lPATH
-            
+                p = '/usr/local/go-ipfs'
+                found = False
+                for tmp_path in os.environ['PATH'].split(':'):
+                    if not tmp_path.strip():
+                        continue
+                    if os.path.normpath(p) == os.path.normpath(tmp_path):
+                        found=True
+                        break
+
+                if found:
+                    print("IPFS location already in PATH!")
+                else:
+                    with open(os.path.join(home_dir,'.bashrc'),'a') as f:
+                        f.write('\nexport PATH=$PATH:'+p+'\n')
+                    os.environ['PATH']+=':'+p
+                        
             #Generate Swarm Key for Private IPFS Network
             if args.generate_swarm_key:
                 print("Acquiring swarm key generator...")
@@ -211,21 +241,39 @@ def installIPFS(args):
                     if not os.path.isdir(dest):
                         os.makedirs(dest)
                     dest = os.path.join(dest,'swarm.key')
-                    print('Generating swarm key to',Path.home()/'.ipfs'/'swarm.key')
-                    if not os.path.isdir(Path.home()/'.ipfs'):
-                        os.makedirs(Path.home()/'.ipfs')
-                    output = subprocess.run(['ipfs-swarm-key-gen'],capture_output=True,text=True).stdout
-                    with open(Path.home()/'.ipfs'/'swarm.key','w') as f:
-                        f.write(output)
+
+                    if isWindows():
+                        print('Generating swarm key to',Path.home()/'.ipfs'/'swarm.key')
+                        if not os.path.isdir(Path.home()/'.ipfs'):
+                            os.makedirs(Path.home()/'.ipfs')
+                        output = subprocess.run(['ipfs-swarm-key-gen'],capture_output=True,text=True).stdout
+                        with open(Path.home()/'.ipfs'/'swarm.key','w') as f:
+                            f.write(output)
+                    else:
+                        swarm_key_path = os.path.join(home_dir,'.ipfs','swarm.key')
+                        print("Generating swarm key to",swarm_key_path)
+                        if not os.path.isdir(os.path.join(home_dir,'.ipfs')):
+                            os.makedirs(os.path.join(home_dir,'.ipfs'))
+                        output = subprocess.run(['ipfs-swarm-key-gen'],capture_output=True,text=True).stdout
+                        with open(swarm_key_path,'w') as f:
+                            f.write(output)
+                    
                     print("Writing to redistributable folder at",args.redist_path)
                     with open(dest,'w') as f:
                         f.write(output)
                     print("NOTE: The Swarm key must be copied to all new nodes joining the private network.")
-            
+                        
+                        
+
             #Force Private Network with Environment Variable
-            print("Setting LIBP2P environment flag to force private IPFS networking...")
-            output = subprocess.run(['setx','LIBP2P_FORCE_PNET','1']).stdout
-            print(output)
+            if isWindows():
+                print("Setting LIBP2P environment flag to force private IPFS networking...")
+                output = subprocess.run(['setx','LIBP2P_FORCE_PNET','1']).stdout
+                print(output)
+            else:
+                with open(os.path.join(home_dir,'.bashrc'),'a') as f:
+                    f.write('\nexport LIBP2P_FORCE_PNET=1\n')
+                os.environ['LIBP2P_FORCE_PNET']='1'
 
             #Initialize IPFS
             print("Initializing IPFS...")
@@ -622,13 +670,19 @@ def main():
             print(a)
     else: #NOTE: Currently not handling MacOS, just linux, more specifically just Ubuntu for now
         #TODO: Add platform-specific install steps as branches within the install functions
-        if not isAdmin():
+        #response = messagebox.askyesno("Environment Check","Was the script run with path override? (sudo PATH=$PATH python3 prereq.py)")
+        #if not response:
+        #    messagebox.showerror("Environment Check","Please run the script with the PATH override else installtion will not happen correctly");
+        #    exit(0)
+        if not isAdmin() and False:
             print("Please re-run installer with sudo.")
             exit(0)
         else:
-            home_dir = os.path.expanduser('~'+os.environ['SUDO_USER'])
+            home_dir = str(Path.home())#os.path.expanduser('~'+os.environ['SUDO_USER'])
             if not args.skip_golang:
                 installGoLang(args)
+            if not args.skip_ipfs:
+                installIPFS(args)
             pass
         pass
 
