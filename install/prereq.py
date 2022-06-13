@@ -5,7 +5,6 @@ import json
 import os
 import pathlib
 from pathlib import Path
-#import pip._internal as pip
 import platform
 from re import sub
 import requests
@@ -28,11 +27,11 @@ sys.path.append(os.path.abspath(os.path.join(tmp_dir,'../..')))
 from ipfs import IPFS
 
 tkroot = tk.Tk()
-#tkroot.overrideredirect(1)
 tkroot.withdraw()
+#TODO: Bug when using messagebox calls on Ubuntu: Windows don't close after user clicks a button
 
 lPATH = os.getenv('PATH')
-home_dir = None #Used to deal with Path.home() pointing to the root user on Ubuntu when using sudo. Init in main()
+home_dir = None #TODO: No longer necessary since sudo is not needed on Ubuntu
 
 def downloadFile(url,dest_dir):
     if not os.path.isdir(dest_dir):
@@ -165,8 +164,7 @@ def installIPFS(args):
         ipfs_fname = 'go-ipfs_v'+ipfs_version+'_windows-amd64.zip'
     else:
         ipfs_fname = 'go-ipfs_v'+ipfs_version+'_linux-amd64.tar.gz'
-    #user_path = subprocess.run(["powershell", "-Command","[Environment]::GetEnvironmentVariable('Path','User')"], capture_output=True,text=True).stdout
-    #print(user_path)
+
     tmp_out = None
     try:
         tmp_out = subprocess.run(['ipfs','version'],capture_output=True,text=True).stdout
@@ -262,9 +260,7 @@ def installIPFS(args):
                     with open(dest,'w') as f:
                         f.write(output)
                     print("NOTE: The Swarm key must be copied to all new nodes joining the private network.")
-                        
-                        
-
+            
             #Force Private Network with Environment Variable
             if isWindows():
                 print("Setting LIBP2P environment flag to force private IPFS networking...")
@@ -295,18 +291,14 @@ def installIPFS(args):
                     if result.status_code == 200:
                         node_id = result.json()['ID']
                         break
-                #proc.send_signal(signal.CTRL_C_EVENT)
                 proc.terminate()
-                #proc.send_signal(signal.CTRL_C_EVENT)
                 bootstrap_addr+=node_id
-                #print("Saving textual copy of bootstrap address at",str(Path.home()/'.ipfs'/'bootstrap_id.txt'))
-                #with open(Path.home()/'.ipfs'/'bootstrap_id.txt','w') as f:
-                #    f.write(bootstrap_addr)
                 
                 print('Removing current bootstrap targets')
                 output = subprocess.run(['ipfs','bootstrap','rm','--all'],capture_output=True,text=True)
                 print(output.stdout,output.stderr)
 
+                #TODO: Modify to prevent duplicate entries being written
                 if not args.ipfs_bootstrap_file:
                     print('Adding private bootstrap node target')
                     output = subprocess.run(['ipfs','bootstrap','add',bootstrap_addr],capture_output=True,text=True)
@@ -339,7 +331,10 @@ def installIPFS(args):
 def installIPFSClusterService(args):
     global tmp_dir,lPATH
     ipfscluster_url = 'https://dist.ipfs.io/ipfs-cluster-service/v'+ipfs_cluster_version+'/'
-    ipfscluster_fname = 'ipfs-cluster-service_v'+ipfs_cluster_version+'_windows-amd64.zip'
+    if isWindows():
+        ipfscluster_fname = 'ipfs-cluster-service_v'+ipfs_cluster_version+'_windows-amd64.zip'
+    else:
+        ipfscluster_fname = 'ipfs-cluster-service_v'+ipfs_cluster_version+'_linux-amd64.tar.gz'
 
     tmp_out = None
     try:
@@ -356,30 +351,51 @@ def installIPFSClusterService(args):
             print("Acquiring IPFS-Cluster-Service...")
             ipfscluster_fname = downloadFile(ipfscluster_url+ipfscluster_fname,tmp_dir)
             print("Extracting contents to",Path.home()/'Apps'/os.path.splitext(ipfscluster_fname)[0])
-            with ZipFile(os.path.join(tmp_dir,ipfscluster_fname),'r') as zf:
-                zf.extractall(Path.home()/'Apps'/os.path.splitext(ipfscluster_fname)[0])
-            
+            if isWindows():
+                with ZipFile(os.path.join(tmp_dir,ipfscluster_fname),'r') as zf:
+                    zf.extractall(Path.home()/'Apps'/os.path.splitext(ipfscluster_fname)[0])
+            else:
+                with tarfile.open(os.path.join(tmp_dir,ipfscluster_fname)) as f:
+                    f.extractall(Path.home()/'Apps'/str(ipfscluster_fname).replace('.tar.gz',''))
+
+
             #Add path to extracted folder to $PATH
             print("Updating path...")
-            p = str(Path.home()/'Apps'/os.path.splitext(ipfscluster_fname)[0]/'ipfs-cluster-service')
-            user_path = subprocess.run(["powershell", "-Command","[Environment]::GetEnvironmentVariable('Path','User')"], capture_output=True,text=True).stdout
-            
-            found = False
-            for tmp_path in user_path.strip().split(';'):
-                if not tmp_path.strip():
-                    continue
-                if p == tmp_path:
-                    found = True
-                    break
+            if isWindows():
+                p = str(Path.home()/'Apps'/os.path.splitext(ipfscluster_fname)[0]/'ipfs-cluster-service')
+                user_path = subprocess.run(["powershell", "-Command","[Environment]::GetEnvironmentVariable('Path','User')"], capture_output=True,text=True).stdout
+                
+                found = False
+                for tmp_path in user_path.strip().split(';'):
+                    if not tmp_path.strip():
+                        continue
+                    if p == tmp_path:
+                        found = True
+                        break
 
-            if found:
-                print("IPFS-Cluster-Service location already in PATH!")
+                if found:
+                    print("IPFS-Cluster-Service location already in PATH!")
+                else:
+                    output = subprocess.run(['setx','PATH',user_path.strip()+p+';'],capture_output=True,text=True)
+                    print(output.stdout,output.stderr)
+                
+                lPATH += ';'+p
+                os.environ['PATH'] = lPATH
             else:
-                output = subprocess.run(['setx','PATH',user_path.strip()+p+';'],capture_output=True,text=True)
-                print(output.stdout,output.stderr)
-            
-            lPATH += ';'+p
-            os.environ['PATH'] = lPATH
+                p = str(Path.home()/'Apps'/str(ipfscluster_fname).replace('.tar.gz',''))
+                found = False
+                for tmp_path in os.environ['PATH'].strip().split(':'):
+                    if not tmp_path.strip():
+                        continue
+                    if os.path.normpath(p) == os.path.normpath(tmp_path):
+                        found=True
+                        break
+                if found:
+                    print('IPFS-Cluster-Service location already in PATH!')
+                else:
+                    with open(os.path.join(home_dir,'.bashrc'),'a') as f:
+                        f.write('\nexport PATH=$PATH:'+p+'\n')
+                    os.environ['PATH']+=':'+os.path.join(p,'ipfs-cluster-service')
 
             #Initialize Cluster Service
             print("Initializing IPFS-Cluster-Service...")
@@ -417,7 +433,10 @@ def installIPFSClusterService(args):
 def installIPFSClusterControl(args):
     global tmp_dir
     ipfscluster_url = 'https://dist.ipfs.io/ipfs-cluster-ctl/v'+ipfs_cluster_version+'/'
-    ipfscluster_fname = 'ipfs-cluster-ctl_v'+ipfs_cluster_version+'_windows-amd64.zip'
+    if isWindows():
+        ipfscluster_fname = 'ipfs-cluster-ctl_v'+ipfs_cluster_version+'_windows-amd64.zip'
+    else:
+        ipfscluster_fname = 'ipfs-cluster-ctl_v'+ipfs_cluster_version+'_linux-amd64.tar.gz'
 
     tmp_out = None
     try:
@@ -434,27 +453,47 @@ def installIPFSClusterControl(args):
             print("Acquiring IPFS-Cluster-Ctl...")
             ipfscluster_fname = downloadFile(ipfscluster_url+ipfscluster_fname,tmp_dir)
             print("Extracting contents to",Path.home()/'Apps'/os.path.splitext(ipfscluster_fname)[0])
-            with ZipFile(os.path.join(tmp_dir,ipfscluster_fname),'r') as zf:
-                zf.extractall(Path.home()/'Apps'/os.path.splitext(ipfscluster_fname)[0])
-            
+            if isWindows():
+                with ZipFile(os.path.join(tmp_dir,ipfscluster_fname),'r') as zf:
+                    zf.extractall(Path.home()/'Apps'/os.path.splitext(ipfscluster_fname)[0])
+            else:
+                with tarfile.open(os.path.join(tmp_dir,ipfscluster_fname)) as f:
+                    f.extractall(Path.home()/'Apps'/str(ipfscluster_fname).replace('.tar.gz',''))
+                        
             #Add path to extracted folder to $PATH
             print("Updating path...")
-            p = str(Path.home()/'Apps'/os.path.splitext(ipfscluster_fname)[0]/'ipfs-cluster-ctl')
-            user_path = subprocess.run(["powershell", "-Command","[Environment]::GetEnvironmentVariable('Path','User')"], capture_output=True,text=True).stdout
-            
-            found = False
-            for tmp_path in user_path.strip().split(';'):
-                if not tmp_path.strip():
-                    continue
-                if p == tmp_path:
-                    found = True
-                    break
+            if isWindows():
+                p = str(Path.home()/'Apps'/os.path.splitext(ipfscluster_fname)[0]/'ipfs-cluster-ctl')
+                user_path = subprocess.run(["powershell", "-Command","[Environment]::GetEnvironmentVariable('Path','User')"], capture_output=True,text=True).stdout
+                
+                found = False
+                for tmp_path in user_path.strip().split(';'):
+                    if not tmp_path.strip():
+                        continue
+                    if p == tmp_path:
+                        found = True
+                        break
 
-            if found:
-                print("IPFS-Cluster-Ctl location already in PATH!")
+                if found:
+                    print("IPFS-Cluster-Ctl location already in PATH!")
+                else:
+                    output = subprocess.run(['setx','PATH',user_path.strip()+p+';']).stdout
             else:
-                output = subprocess.run(['setx','PATH',user_path.strip()+p+';']).stdout
-            
+                p = str(Path.home()/'Apps'/str(ipfscluster_fname).replace('.tar.gz',''))
+                found = False
+                for tmp_path in os.environ['PATH'].strip().split(':'):
+                    if not tmp_path.strip():
+                        continue
+                    if os.path.normpath(p) == os.path.normpath(tmp_path):
+                        found=True
+                        break
+                if found:
+                    print('IPFS-Cluster-Ctl location already in PATH!')
+                else:
+                    with open(os.path.join(home_dir,'.bashrc'),'a') as f:
+                        f.write('\nexport PATH=$PATH:'+p+'\n')
+                    os.environ['PATH']+=':'+os.path.join(p,'ipfs-cluster-ctl')
+
         print('IPFS-Cluster-Ctl Installation Step Complete')
    
     pass
@@ -462,7 +501,11 @@ def installIPFSClusterControl(args):
 def installGeth(args):
     global tmp_dir, lPATH
     geth_url = 'https://gethstore.blob.core.windows.net/builds/'
-    geth_fname = 'geth-windows-amd64-'+geth_version+'.exe'
+    if isWindows():
+        #geth_fname = 'geth-windows-amd64-'+geth_version+'.exe'
+        geth_fname = 'geth-windows-amd64-'+geth_version+'.zip'
+    else:
+        geth_fname = 'geth-linux-amd64-'+geth_version+'.tar.gz'
     
     tmp_out = None
     try:
@@ -477,34 +520,59 @@ def installGeth(args):
         if not args.noinstall:
             print("Acquiring Geth Installer...")
             geth_fname = downloadFile(geth_url+geth_fname,tmp_dir)
-            #subprocess.run([os.path.join(tmp_dir,geth_fname)],capture_output=True)
+
+            print("Extracting contents to",str(Path.home()/'Apps'/geth_fname.replace('.tar.gz','')))
+            if isWindows():
+                with ZipFile(os.path.join(tmp_dir,geth_fname),'r') as zf:
+                    zf.extractall(Path.home()/'Apps'/os.path.splitext(geth_fname)[0])
+            else:
+                with tarfile.open(os.path.join(tmp_dir,geth_fname)) as f:
+                    f.extractall(Path.home()/'Apps')
 
             #Update Local Process Path
-            messagebox.showinfo('Select Geth Directory','Please select the folder containing geth.exe.',parent=tkroot)
-            geth_path = filedialog.askdirectory()
-            if not geth_path:
-                print("Cannot proceed without the bin directory location of the geth executable.")
-                exit(1)
+
+            #messagebox.showinfo('Select Geth Directory','Please select the folder containing geth.exe.',parent=tkroot)
+            #geth_path = filedialog.askdirectory()
+            #if not geth_path:
+            #    print("Cannot proceed without the bin directory location of the geth executable.")
+            #    exit(1)
             
             print("Updating path...")
-            user_path = subprocess.run(["powershell", "-Command","[Environment]::GetEnvironmentVariable('Path','User')"], capture_output=True,text=True).stdout
-            
-            found = False
-            for tmp_path in user_path.strip().split(';'):
-                if not tmp_path.strip():
-                    continue
-                if geth_path == tmp_path:
-                    found = True
-                    break
+            if isWindows():
+                geth_path = str(Path.home()/'Apps'/geth_fname.replace('.tar.gz',''))
+                user_path = subprocess.run(["powershell", "-Command","[Environment]::GetEnvironmentVariable('Path','User')"], capture_output=True,text=True).stdout
+                
+                found = False
+                for tmp_path in user_path.strip().split(';'):
+                    if not tmp_path.strip():
+                        continue
+                    if geth_path == tmp_path:
+                        found = True
+                        break
 
-            if found:
-                print("Geth location already in PATH!")
+                if found:
+                    print("Geth location already in PATH!")
+                else:
+                    output = subprocess.run(['setx','PATH',user_path.strip()+geth_path+';'],capture_output=True,text=True)
+                    print(output.stdout,output.stderr)
+                
+                lPATH += ';'+geth_path+';'+str(Path.home()/'go'/'bin')
+                os.environ['PATH'] = lPATH
             else:
-                output = subprocess.run(['setx','PATH',user_path.strip()+geth_path+';'],capture_output=True,text=True)
-                print(output.stdout,output.stderr)
-            
-            lPATH += ';'+geth_path+';'+str(Path.home()/'go'/'bin')
-            os.environ['PATH'] = lPATH
+                p = str(Path.home()/'Apps'/str(geth_fname).replace('.tar.gz',''))
+                found = False
+                for tmp_path in os.environ['PATH'].strip().split(':'):
+                    if not tmp_path.strip():
+                        continue
+                    if os.path.normpath(p) == os.path.normpath(tmp_path):
+                        found=True
+                        break
+                if found:
+                    print('Geth location already in PATH!')
+                else:
+                    with open(os.path.join(home_dir,'.bashrc'),'a') as f:
+                        f.write('\nexport PATH=$PATH:'+p+'\n')
+                    os.environ['PATH']+=':'+p
 
             #Create ethereum base directory
             eth_path = str(Path.home()/'.eth')
@@ -517,7 +585,7 @@ def installGeth(args):
                 #Check for pswd file to use for account creation else generate a new one.
                 acct_name = None
                 while True:
-                    acct_name = simpledialog.askstring("Create New Geth Account",'Enter New Geth Account Name').strip()
+                    acct_name = simpledialog.askstring("Create New Geth Account",'Enter New Geth Account Name')
                     
                     if not acct_name is None and not acct_name:
                         messagebox.showerror("Geth Account Name",'Account name cannot be empty!')
@@ -526,6 +594,7 @@ def installGeth(args):
                         if response:
                             exit(0)
                     else:
+                        acct_name=acct_name.strip()
                         forbidden_chars = '< > : " / \\ | ? *'.split(' ')
                         forbidden_chars += [chr(i) for i in range(31)]
                         reserved_names = 'CON, PRN, AUX, NUL, COM0, COM1, COM2, COM3, COM4, COM5, COM6, COM7, COM8, COM9, LPT0, LPT1, LPT2, LPT3, LPT4, LPT5, LPT6, LPT7, LPT8, LPT9'.replace(',','').split(' ')
@@ -667,22 +736,26 @@ def main():
         else:
             print("Relaunching as admin")
             a = ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, " ".join(sys.argv), None, 1)
-            print(a)
+            if a != 32:
+                print('Elevation attempt yielded code',a)
     else: #NOTE: Currently not handling MacOS, just linux, more specifically just Ubuntu for now
         #TODO: Add platform-specific install steps as branches within the install functions
-        #response = messagebox.askyesno("Environment Check","Was the script run with path override? (sudo PATH=$PATH python3 prereq.py)")
-        #if not response:
-        #    messagebox.showerror("Environment Check","Please run the script with the PATH override else installtion will not happen correctly");
-        #    exit(0)
-        if not isAdmin() and False:
+        
+        if not isAdmin() and False: #No longer require sudo
             print("Please re-run installer with sudo.")
             exit(0)
         else:
-            home_dir = str(Path.home())#os.path.expanduser('~'+os.environ['SUDO_USER'])
+            home_dir = str(Path.home())
             if not args.skip_golang:
                 installGoLang(args)
             if not args.skip_ipfs:
                 installIPFS(args)
+            if not args.skip_ipfs_cluster_service:
+                installIPFSClusterService(args)
+            if not args.skip_ipfs_cluster_ctl:
+                installIPFSClusterControl(args)
+            if not args.skip_geth:
+                installGeth(args)
             pass
         pass
 
