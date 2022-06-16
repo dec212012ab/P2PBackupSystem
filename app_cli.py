@@ -4,6 +4,8 @@ import json
 import pathlib
 import pickle
 import os
+from pyclbr import Function
+import sys
 import tkinter
 
 from consolemenu import *
@@ -16,8 +18,6 @@ from pathlib import Path
 
 from tkinter import filedialog
 
-root = tkinter.Tk()
-root.withdraw()
 
 class CLIApp:
     def __init__(self,ipfs_obj:IPFS,ipfs_cluster_obj:IPFSCluster,geth_obj:GethHelper):
@@ -68,11 +68,6 @@ class CLIApp:
         backup_menu = ConsoleMenu(self.title,"Backup Menu",clear_screen=False)
 
         def listTrackedLocations():
-            #response = self.ipfs.execute_cmd('id',{})
-            #if response.status_code == 200:
-            #    print(json.dumps(json.loads(response.text),indent=2,sort_keys=True))
-            #else:
-            #    print(response.text)
             if not self.tracked_locations:
                 print("No tracked locations")
             else:
@@ -133,16 +128,71 @@ class CLIApp:
             m.show()'''
 
         def showDeletionMenu():
-            l = list(self.tracked_locations)
+            l = list(self.tracked_locations) + ['Cancel']
             index = SelectionMenu.get_selection(l,self.title,'Select Items to Untrack',show_exit_option=False)
-            self.tracked_locations.remove(l[index])                
+            if index != len(l)-1:
+                self.tracked_locations.remove(l[index])
+
+        def runBackup():
+            staging_dir = os.path.dirname(sys.argv[0])
+            staging_dir = os.path.join(staging_dir,'.bckup_stage')
+
+            #Get IPFS ID
+            response = self.ipfs.execute_cmd('id',{})
+            prefix = ''
+            if response.status_code == 200:
+                prefix = response.json()['ID']
+                print("Using prefix",prefix)
+
+            #Accumulate and generate staged chunks
+            print("Staging chunks")
+            self.chunker.stageChunks(staging_dir,self.tracked_locations,prefix)
+
+            print('Posting to IPFS')
+            #Post to IPFS 
+            ids = []
+            for item in os.listdir(staging_dir):
+                print('Posting',item)
+                response = self.ipfs.execute_cmd('add',{'file':open(os.path.join(staging_dir,item),'rb')})
+                if response.status_code == 200:
+                    jsonized = response.json()
+                    ids.append((jsonized["Name"],jsonized["Hash"]))
+                else:
+                    print("Received response: ",response.text)
+                    print("Aborting Backup")
+                    return
+
+            print(ids)
+
+            peer_count = 1
+            response = self.ipfs.execute_cmd('swarm/peers',{})
+            if response.status_code == 200:
+                print(response.text)
+                response = response.json()
+                if response['Peers']:
+                    peer_count = len(response.json()['Peers'])
+            else:
+                print("Received response: ",response.text)
+                print("Aborting Backup")
+                return
+            
+            print('Peer count',peer_count)
+            for id in ids:
+                self.ipfs.execute_cmd('pin/rm',{},id[1])
+            self.ipfs.execute_cmd('repo/gc',{})
+
+            #alloc = self.chunker.lookupLUT()
+            #Add to Cluster with replication factors
+            
+
 
         options = [
             FunctionItem("List Tracked Locations",listTrackedLocations),
             FunctionItem("Add Directory to Tracking List",trackDirectory),
             FunctionItem("Add File to Tracking List",trackFile),
             FunctionItem("Save Tracking List",saveTracked),
-            FunctionItem("Remove Tracked Item",showDeletionMenu)
+            FunctionItem("Remove Tracked Item",showDeletionMenu),
+            FunctionItem("Run Backup",runBackup)            
         ]
         for opt in options:
             backup_menu.append_item(opt)

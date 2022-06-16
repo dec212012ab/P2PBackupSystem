@@ -16,6 +16,7 @@ from geth_helper import GethHelper
 from app_cli import CLIApp
 from chunker import Chunker
 
+
 def isWindows():
     return platform.system() == 'Windows'
 
@@ -36,7 +37,7 @@ def stopDaemon(name):
         proc.kill()
 
 def ensureDaemon(name,start_cmd):
-    if not findProcsByName(name):
+    if len(findProcsByName(start_cmd[0]))<1:
         print(name,"daemon is not running. Starting up the",name,"daemon...")
         if isWindows():
             subprocess.Popen(start_cmd,start_new_session=True,close_fds=True,creationflags=subprocess.DETACHED_PROCESS)

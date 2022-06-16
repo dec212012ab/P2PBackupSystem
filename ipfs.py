@@ -44,7 +44,6 @@ class IPFS:
             tmp.text = "Connection to http://"+str(self.host)+':'+str(self.port)+' failed. Is the IPFS Daemon running?'
             return tmp
 
-
 #TODO: check for arg support specifically for /add
 class IPFSCluster:
     def __init__(self,host_ip='localhost',port='9094'):
