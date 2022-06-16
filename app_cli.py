@@ -164,7 +164,20 @@ class CLIApp:
 
             print(ids)
 
-            peer_count = 1
+            #Add to MFS
+            mfs_dir = '/backups/'+ids[0][0][:-7]
+            response = self.ipfs.execute_cmd('files/mkdir',{},'/backups/'+ids[0][0][:-7],parents=True)
+            print("Adding references to MFS")
+            for id in ids:
+                response = self.ipfs.execute_cmd('files/cp',{},'/ipfs/'+id[1],os.path.join(mfs_dir,id[0]))
+                if response.status_code != 200:
+                    print("Received response: ",response.text)
+                    print("Aborting Backup")
+                    return
+                pass
+            
+            #Get peer count
+            peer_count = 0
             response = self.ipfs.execute_cmd('swarm/peers',{})
             if response.status_code == 200:
                 print(response.text)
@@ -175,8 +188,16 @@ class CLIApp:
                 print("Received response: ",response.text)
                 print("Aborting Backup")
                 return
-            
+
             print('Peer count',peer_count)
+
+            cl_peers = 0
+            response = self.ipfscl.peers()
+            if response.status_code == 200:
+                response = response.json()
+                cl_peers = len([item for item in response['cluster_peers'] if item!=response['id']])
+            print("Cluster Peer Count:",cl_peers)
+            
             for id in ids:
                 self.ipfs.execute_cmd('pin/rm',{},id[1])
             self.ipfs.execute_cmd('repo/gc',{})
