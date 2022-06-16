@@ -81,7 +81,7 @@ def installGoLang(args):
     tmp_out = None
     go_url = 'https://go.dev/dl/'
     if isWindows():
-        go_fname = 'go'+go_version+'.windows-amd64.msi'
+        go_fname = 'go'+go_version+'.windows-amd64.zip'
     else:
         go_fname = 'go'+go_version+'.linux-amd64.tar.gz'
 
@@ -98,20 +98,23 @@ def installGoLang(args):
             go_fname = downloadFile(go_url+go_fname,tmp_dir)
             print(os.path.join(tmp_dir,go_fname))
             if isWindows():
-                subprocess.run([
-                    "msiexec","/i",os.path.join(tmp_dir,go_fname)
-                ],capture_output=True)
-                messagebox.showinfo('Select Go bin Directory','Please select the bin folder of the Go installation used with the Go installer.',parent=tkroot)
-                go_path = filedialog.askdirectory()
-                if not go_path:
-                    print("Cannot proceed without the bin directory location of the Go installation.")
-                    exit(1)
+                #subprocess.run([
+                #    "msiexec","/i",os.path.join(tmp_dir,go_fname)
+                #],capture_output=True)
+                #messagebox.showinfo('Select Go bin Directory','Please select the bin folder of the Go installation used with the Go installer.',parent=tkroot)
+                #go_path = filedialog.askdirectory()
+                #if not go_path:
+                #    print("Cannot proceed without the bin directory location of the Go installation.")
+                #    exit(1)
+                with ZipFile(os.path.join(tmp_dir,go_fname),'r') as zf:
+                    zf.extractall(str(Path.home()/'Apps'))
             else:
                 f = tarfile.open(os.path.join(tmp_dir,go_fname))
                 f.extractall(Path.home()/'Apps')
                 f.close()
-                go_path = str(Path.home()/'Apps'/'go')
-                print("Extracted go installation to",go_path)
+            
+            go_path = str(Path.home()/'Apps'/'go')
+            print("Extracted go installation to",go_path)
                        
             
             print("Updating path...")
@@ -134,6 +137,12 @@ def installGoLang(args):
                 
                 lPATH += ';'+go_path+';'+str(Path.home()/'go'/'bin')
                 os.environ['PATH'] = lPATH
+
+                output = subprocess.run(['setx','GOROOT',go_path],capture_output=True,text=True)
+                print(output.stdout,output.stderr)
+
+                output = subprocess.run(['setx','GOPATH',str(Path.home()/'go')],capture_output=True,text=True)
+                print(output.stdout,output.stderr)
             else:
                 found = False
                 for tmp_path in os.environ['PATH'].split(':'):
@@ -154,6 +163,7 @@ def installGoLang(args):
                     os.environ['GOPATH'] = os.path.join(home_dir,'go')
                     os.environ["PATH"] +=':'+os.path.join(go_path,'bin')
                     os.environ["PATH"] +=':'+os.path.join(home_dir,'go/bin')
+                    print(os.environ['PATH'])
                 pass
     print("GoLang Installation Step Complete")
 
@@ -226,7 +236,10 @@ def installIPFS(args):
                 else:
                     with open(os.path.join(home_dir,'.bashrc'),'a') as f:
                         f.write('\nexport PATH=$PATH:'+p+'\n')
-                    os.environ['PATH']+=':'+p
+                    if isWindows():
+                        os.environ['PATH']+=';'+p
+                    else:
+                        os.environ['PATH']+=':'+p
                         
             #Generate Swarm Key for Private IPFS Network
             if args.generate_swarm_key:
@@ -252,6 +265,7 @@ def installIPFS(args):
                         print("Generating swarm key to",swarm_key_path)
                         if not os.path.isdir(os.path.join(home_dir,'.ipfs')):
                             os.makedirs(os.path.join(home_dir,'.ipfs'))
+                        print(subprocess.run(['env'],capture_output=True,text=True).stdout)
                         output = subprocess.run(['ipfs-swarm-key-gen'],capture_output=True,text=True).stdout
                         with open(swarm_key_path,'w') as f:
                             f.write(output)
@@ -260,6 +274,15 @@ def installIPFS(args):
                     with open(dest,'w') as f:
                         f.write(output)
                     print("NOTE: The Swarm key must be copied to all new nodes joining the private network.")
+            
+            if args.swarm_key_file:
+                dest = str(Path.home()/'.ipfs')
+                print('Attempting to copy provided swarm key')
+                if not os.path.isdir(dest):
+                    os.makedirs(dest)
+                if os.path.isfile(args.swarm_key_file):
+                    shutil.copy2(args.swarm_key_file,dest)
+                
             
             #Force Private Network with Environment Variable
             if isWindows():
@@ -338,8 +361,9 @@ def installIPFSClusterService(args):
 
     tmp_out = None
     try:
-        tmp_out = subprocess.run(['ipfs-cluster-service','--version'],capture_output=True,text=True).stdout
-        assert 'ipfs-cluster-service' in tmp_out[:20], "There appears to be an issue retrieving the IPFS-Cluster-Service version..."
+        tmp_out = subprocess.run(['ipfs-cluster-service','--version'],capture_output=True,text=True)
+        assert 'ipfs-cluster-service' in tmp_out.stdout[:20], "There appears to be an issue retrieving the IPFS-Cluster-Service version..."
+        tmp_out=tmp_out.stdout
     except:
         print("IPFS-Cluster-Service installation not found")
     
@@ -394,7 +418,7 @@ def installIPFSClusterService(args):
                     print('IPFS-Cluster-Service location already in PATH!')
                 else:
                     with open(os.path.join(home_dir,'.bashrc'),'a') as f:
-                        f.write('\nexport PATH=$PATH:'+p+'\n')
+                        f.write('\nexport PATH=$PATH:'+os.path.join(p,'ipfs-cluster-service')+'\n')
                     os.environ['PATH']+=':'+os.path.join(p,'ipfs-cluster-service')
 
             #Initialize Cluster Service
@@ -491,7 +515,7 @@ def installIPFSClusterControl(args):
                     print('IPFS-Cluster-Ctl location already in PATH!')
                 else:
                     with open(os.path.join(home_dir,'.bashrc'),'a') as f:
-                        f.write('\nexport PATH=$PATH:'+p+'\n')
+                        f.write('\nexport PATH=$PATH:'+os.path.join(p,'ipfs-cluster-ctl')+'\n')
                     os.environ['PATH']+=':'+os.path.join(p,'ipfs-cluster-ctl')
 
         print('IPFS-Cluster-Ctl Installation Step Complete')
@@ -524,7 +548,7 @@ def installGeth(args):
             print("Extracting contents to",str(Path.home()/'Apps'/geth_fname.replace('.tar.gz','')))
             if isWindows():
                 with ZipFile(os.path.join(tmp_dir,geth_fname),'r') as zf:
-                    zf.extractall(Path.home()/'Apps'/os.path.splitext(geth_fname)[0])
+                    zf.extractall(Path.home()/'Apps')
             else:
                 with tarfile.open(os.path.join(tmp_dir,geth_fname)) as f:
                     f.extractall(Path.home()/'Apps')
@@ -539,7 +563,7 @@ def installGeth(args):
             
             print("Updating path...")
             if isWindows():
-                geth_path = str(Path.home()/'Apps'/geth_fname.replace('.tar.gz',''))
+                geth_path = str(Path.home()/'Apps'/geth_fname.replace('.zip',''))
                 user_path = subprocess.run(["powershell", "-Command","[Environment]::GetEnvironmentVariable('Path','User')"], capture_output=True,text=True).stdout
                 
                 found = False
@@ -610,6 +634,7 @@ def installGeth(args):
                         if not valid:
                             continue
                         break
+                data_dir = os.path.join(eth_path,acct_name)
                 pswd = None
                 while True:
                     pswd = simpledialog.askstring("Create New Geth Account Password",'Enter New Geth Account Password',show='*')
@@ -667,10 +692,19 @@ def installGeth(args):
 
                 json.dump(genesis_json,open(os.path.join(eth_path,'genesis.json'),'w'),sort_keys=True,indent=4)
 
-                #Init Geth Database
-                output = subprocess.run(['geth','init','--datadir',data_dir,os.path.join(eth_path,'genesis.json')],capture_output=True,text=True)
-                print(output.stdout,output.stderr)
-                print("Genesis Block created and deployed")
+                if not os.path.isdir('./redist/geth'):
+                    os.makedirs('./redist/geth')
+                shutil.copy2(os.path.join(eth_path,'genesis.json'),'./redist/geth/genesis.json')
+
+
+            #Init Geth Database
+            if args.geth_init_data_dir:
+                if os.path.isdir(args.geth_init_data_dir):
+                    output = subprocess.run(['geth','init','--datadir',data_dir,os.path.join(eth_path,'genesis.json')],capture_output=True,text=True)
+                    print(output.stdout,output.stderr)
+                    print("Genesis Block created and deployed")
+                else:
+                    print("Provided path,",args.geth_init_data_dir,'is not a valid geth account data directory! Skipping init step')
 
             #Install py-solc-x
             try:
@@ -698,11 +732,13 @@ def parseArgs():
     parser.add_argument('--noinstall',action='store_true',help='Prevents download and installation of packages')
     parser.add_argument('--clean',action='store_true',help='Removes any preexisting installation artifacts before checking and installing packages')
     parser.add_argument('--generate_swarm_key',action='store_true',help='Should be set for the first node in the network installing the software to generate a shared IPFS swarm key')
+    parser.add_argument('--swarm_key_file',type=str,default='',help='If set will copy the specified swarm.key file to the .ipfs directory.')
     parser.add_argument('--ipfs_bootstrap_id',action='store_true',help='If set, will generate a bootstrap_id.txt file in the redist folder to use with other node installations.')
     parser.add_argument('--ipfs_bootstrap_file',type=str,default='',help='Path to file with bootstrap ids to add to the current node. WILL OVERWRITE EXISTING BOOTSTRAP NODE DATA!')
     parser.add_argument('--cluster_secret_file',type=str,default='',help='If provided, the system will use the cluster secret value from the file instead of generating a new value when configuring IPFS-Cluster')
     parser.add_argument('--geth_network_id',type=int,default=2022,help='The network id to use when setting up the private ethereum network.')
     parser.add_argument('--geth_generate_genesis_block',action='store_true',help='If set, creates the genesis.json file for the Clique. This will also add the node as a signer.')
+    parser.add_argument('--genesis_block_file',type=str,default='',help='If set, will copy the specified genesis file to the .eth folder')
     parser.add_argument('--save_geth_password',type=str,default='',help='If non-empty, the password used for the new account is written to the specified file path.')
     parser.add_argument('--skip_geth_user_creation',action='store_true',help='If set, skip the user creation steps when installing Geth')
     parser.add_argument('--skip_golang',action='store_true',help='If set will skip the Go installation step')
@@ -710,6 +746,7 @@ def parseArgs():
     parser.add_argument('--skip_ipfs_cluster_service',action='store_true',help='If set will skip the IPFS-Cluster-Service installation step')
     parser.add_argument('--skip_ipfs_cluster_ctl',action='store_true',help='If set will skip the IPFS-Cluster-Ctl installation step')
     parser.add_argument('--skip_geth',action='store_true',help='If set will skip the go-ethereum (Geth) client installation step')
+    parser.add_argument('--geth_init_data_dir',type=str,default='',help='If provided with a valid directory, will initialize the account with the genesis block file.')
     return parser.parse_args()
 
 def main():
