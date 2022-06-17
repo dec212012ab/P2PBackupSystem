@@ -1,6 +1,7 @@
 
 import configparser
 import json
+import math
 import pathlib
 import pickle
 import os
@@ -141,12 +142,12 @@ class CLIApp:
             response = self.ipfs.execute_cmd('id',{})
             prefix = ''
             if response.status_code == 200:
-                prefix = response.json()['ID']
+                prefix = response.json()['ID']+'__'
                 print("Using prefix",prefix)
 
             #Accumulate and generate staged chunks
             print("Staging chunks")
-            self.chunker.stageChunks(staging_dir,self.tracked_locations,prefix)
+            shard_count = self.chunker.stageChunks(staging_dir,self.tracked_locations,prefix)
 
             print('Posting to IPFS')
             #Post to IPFS 
@@ -183,7 +184,7 @@ class CLIApp:
                 print(response.text)
                 response = response.json()
                 if response['Peers']:
-                    peer_count = len(response.json()['Peers'])
+                    peer_count = len(response['Peers'])
             else:
                 print("Received response: ",response.text)
                 print("Aborting Backup")
@@ -192,17 +193,33 @@ class CLIApp:
             print('Peer count',peer_count)
 
             cl_peers = 0
+            cl_id = 0
+            response = self.ipfscl.id()
+            if response.status_code == 200:
+                #print(response.json())
+                cl_id = response.json()['id']
+
             response = self.ipfscl.peers()
             if response.status_code == 200:
-                response = response.json()
-                cl_peers = len([item for item in response['cluster_peers'] if item!=response['id']])
+                response = [json.loads(s) for s in response.text.split('\n') if s]
+                #print(response)
+                cl_peers = len([item for item in response if item['id']!=cl_id])
             print("Cluster Peer Count:",cl_peers)
             
             for id in ids:
                 self.ipfs.execute_cmd('pin/rm',{},id[1])
             self.ipfs.execute_cmd('repo/gc',{})
 
-            #alloc = self.chunker.lookupLUT()
+            #alloc = self.chunker.lookupLUT(4,math.ceil((4)/3),shard_count)
+            #print(alloc,4,math.ceil((4)/3),shard_count)
+            #for i,fname in enumerate(os.listdir(staging_dir)):
+            #    print('Chunk Allocation',i,':',self.chunker.lookupChunkAlloc(4,math.ceil((4)/3),shard_count,i))
+
+            if cl_peers+1 < 2:
+                print("Not enough peers for cluster distribution. Skipping")
+                return
+
+            
             #Add to Cluster with replication factors
             
 
