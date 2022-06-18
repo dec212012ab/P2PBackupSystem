@@ -90,7 +90,7 @@ def installGoLang(args):
         assert tmp_out[:10] == 'go version','There appears to be an issue retrieving the Go version...'
     except FileNotFoundError:
         print("Go installation not found")
-    if tmp_out:
+    if tmp_out and not args.force:
         print("Go already installed: ",tmp_out)
     else:
         if not args.noinstall:
@@ -181,7 +181,7 @@ def installIPFS(args):
         assert tmp_out[:12] == 'ipfs version','There appears to be an issue retrieving the IPFS version...'
     except:
         print("IPFS installation not found")
-    if tmp_out:
+    if tmp_out and args.force:
         print("IPFS already installed: ",tmp_out)
     else:
         if not args.noinstall:
@@ -367,7 +367,7 @@ def installIPFSClusterService(args):
     except:
         print("IPFS-Cluster-Service installation not found")
     
-    if tmp_out: 
+    if tmp_out and not args.force: 
         print("IPFS-Cluster-Service already installed: ", tmp_out)
     else:
         if not args.noinstall:
@@ -469,7 +469,7 @@ def installIPFSClusterControl(args):
     except:
         print("IPFS-Cluster-Ctl installation not found")
     
-    if tmp_out:
+    if tmp_out and not args.force:
         print("IPFS-Cluster-Ctl already installed: ", tmp_out)
     else:
         if not args.noinstall:
@@ -538,7 +538,7 @@ def installGeth(args):
     except:
         print("Geth installation not found")
     
-    if tmp_out:
+    if tmp_out and not args.force:
         print('Geth already installed: ',tmp_out)
     else:
         if not args.noinstall:
@@ -659,6 +659,8 @@ def installGeth(args):
                 print(output.stdout,output.stderr)
                 os.remove('./.tmp/'+acct_name)
 
+                args.geth_init_data_dir = data_dir
+
             #Genesis block creation
             if args.geth_generate_genesis_block:
                 #Get account identity
@@ -695,6 +697,10 @@ def installGeth(args):
                 if not os.path.isdir('./redist/geth'):
                     os.makedirs('./redist/geth')
                 shutil.copy2(os.path.join(eth_path,'genesis.json'),'./redist/geth/genesis.json')
+        
+            if args.genesis_block_file:
+                print("Copying genesis block to geth folder...")
+                shutil.copy2(args.genesis_block_file,os.path.join(eth_path,'genesis.json'))
 
 
             #Init Geth Database
@@ -705,6 +711,24 @@ def installGeth(args):
                     print("Genesis Block created and deployed")
                 else:
                     print("Provided path,",args.geth_init_data_dir,'is not a valid geth account data directory! Skipping init step')
+
+            if args.geth_generate_bootstrap_record:
+                if not os.path.isdir('./redist/geth'):
+                    os.makedirs('./redist/geth')
+                records = []
+                if os.path.isfile('./redist/geth/boot'):
+                    with open('./redist/geth/boot','r') as f:
+                        records = f.read().split(',')
+                if not os.path.isdir(data_dir):
+                    data_dir = [os.path.join(eth_path,d) for d in os.listdir(eth_path) if os.path.isdir(os.path.join(eth_path,d))][0]
+                sp = subprocess.Popen(['geth','--datadir',data_dir])
+                output = subprocess.run(['geth','attach','http://localhost:8545','--exec','admin.nodeInfo.enr'])
+                sp.terminate()
+                print(output.stdout)
+                if not output.stdout.strip() in records:
+                    records.append(output.stdout.strip())
+                with open('./redist/geth/boot','w') as f:
+                    f.write(','.join(records))
 
             #Install py-solc-x
             try:
@@ -747,6 +771,8 @@ def parseArgs():
     parser.add_argument('--skip_ipfs_cluster_ctl',action='store_true',help='If set will skip the IPFS-Cluster-Ctl installation step')
     parser.add_argument('--skip_geth',action='store_true',help='If set will skip the go-ethereum (Geth) client installation step')
     parser.add_argument('--geth_init_data_dir',type=str,default='',help='If provided with a valid directory, will initialize the account with the genesis block file.')
+    parser.add_argument('--geth_generate_bootstrap_record',action='store_true',help='If set, will add the newly created node\'s bootstrap-node-record for use by other nodes.')
+    parser.add_argument('--force',action='store_true',help='If set will force selected components to reinstall')
     return parser.parse_args()
 
 def main():

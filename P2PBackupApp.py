@@ -43,7 +43,7 @@ def ensureDaemon(name,start_cmd):
             subprocess.Popen(start_cmd,start_new_session=True,close_fds=True,creationflags=subprocess.DETACHED_PROCESS)
         else:
             subprocess.Popen(start_cmd,start_new_session=True,close_fds=True)
-        while not findProcsByName('ipfs'):
+        while not findProcsByName(start_cmd[0]):
             print("Waiting for",name,"daemon...")
             time.sleep(1)
         print(name,"daemon started!")

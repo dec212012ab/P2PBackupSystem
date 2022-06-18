@@ -48,6 +48,8 @@ class CLIApp:
                 self.chunker.generateLUT('.')
 
         self.createBackupMenu()
+        self.createRecoveryMenu()
+        self.createStatusMenu()
     
     def loadTrackingManifest(self):
         if os.path.isfile(Path.home()/'.backup_manifest'):
@@ -200,12 +202,15 @@ class CLIApp:
                 cl_id = response.json()['id']
 
             response = self.ipfscl.peers()
+            peer_ids = []
             if response.status_code == 200:
                 response = [json.loads(s) for s in response.text.split('\n') if s]
                 #print(response)
-                cl_peers = len([item for item in response if item['id']!=cl_id])
+                peer_ids = [item['id'] for item in response if item['id']!=cl_id]
+                cl_peers = len(peer_ids)
             print("Cluster Peer Count:",cl_peers)
             
+            #NOTE: Remove the unpinning 
             for id in ids:
                 self.ipfs.execute_cmd('pin/rm',{},id[1])
             self.ipfs.execute_cmd('repo/gc',{})
@@ -221,7 +226,11 @@ class CLIApp:
 
             
             #Add to Cluster with replication factors
-            
+            for i,id in enumerate(ids):
+                allocation_list = self.chunker.lookupChunkAlloc(cl_peers+1,self.chunker.required_survivors_percentage*(cl_peers+1),len(ids),i)
+                allocation_peers = ','.join([ids[j][0] for j in allocation_list])
+                response = self.ipfscl.pinCID(id[1],name=os.path.join(mfs_dir,id[0]),replication=len(allocation_list),allocations=allocation_peers)
+                print(response.status_code,response.text)
 
 
         options = [
@@ -237,4 +246,46 @@ class CLIApp:
 
         self.addSubMenu('backup_menu',backup_menu,'Backup Menu')
 
+    def createRecoveryMenu(self):
+        recovery_menu = ConsoleMenu(self.title,'Recovery Menu',clear_screen=False)
+
+        options = [
+            FunctionItem('List Recovery Points',lambda: print("TODO")),
+            FunctionItem('Run Recovery',lambda: print('TODO')),
+            FunctionItem('Run Recovery For Peer Node',lambda: print("TODO")),
+            FunctionItem('Verify Recovery Point',lambda:print('TODO'))
+        ]
+
+        for opt in options:
+            recovery_menu.append_item(opt)
+        
+        self.addSubMenu('recovery_menu',recovery_menu,'Recovery Menu')
+
+    def createStatusMenu(self):
+        status_menu = ConsoleMenu(self.title,'Status Menu',clear_screen=False)
+
+        options = [
+            FunctionItem('List Cluster Peers',lambda:print('TODO')),
+            FunctionItem('Local Node Info',lambda:print('TODO')),
+            FunctionItem('List Active Signer Nodes',lambda:print('TODO')),
+
+        ]
+
+        for opt in options:
+            status_menu.append_item(opt)
+        
+        self.addSubMenu('status_menu',status_menu,'Status Menu')
     
+    def createSettingsMenu(self):
+        settings_menu = ConsoleMenu(self.title,'Settings Menu',clear_screen=False)
+
+        options = [
+            FunctionItem('Set Data Shard Limit',lambda:print('TODO')),
+            FunctionItem('Set Storage Pool Size',lambda:print('TODO')),
+            FunctionItem('List Active Signer Nodes',lambda:print('TODO')),            
+        ]
+
+        for opt in options:
+            settings_menu.append_item(opt)
+        
+        self.addSubMenu('settings_menu',settings_menu,'Settings Menu')
