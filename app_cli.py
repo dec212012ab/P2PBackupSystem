@@ -23,7 +23,7 @@ from tkinter import filedialog
 class CLIApp:
     def __init__(self,ipfs_obj:IPFS,ipfs_cluster_obj:IPFSCluster,geth_obj:GethHelper):
         self.title = "P2P Distributed Backup System"
-        self.menu = ConsoleMenu(self.title,"Main Menu",clear_screen=False)
+        self.menu = ConsoleMenu(self.title,"Main Menu",clear_screen=True)
         self.menu_entries = DotDict()
 
         self.constructed = False

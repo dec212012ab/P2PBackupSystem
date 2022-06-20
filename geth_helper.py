@@ -3,6 +3,7 @@ from web3.middleware import geth_poa
 from solcx import compile_source, compile_files
 import json
 import socket
+from pathlib import Path
 
 def getPrimaryIP():
     s = socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
@@ -37,8 +38,10 @@ class LocalTxManifest:
     def save(self,path):
         pass
 
+
+#--http.api debug,eth,web3,personal,net,admin
 class GethHelper:
-    def __init__(self,host,data_dir,is_signer=False,is_bootstrap=False):
+    def __init__(self,host='http://localhost:8545',data_dir=str(Path.home()/'.eth'/'node0'),is_signer=False,is_bootstrap=False):
         self.contracts = {}
         self.host = host
         self.session = None

@@ -25,6 +25,7 @@ tmp_dir = os.path.abspath(os.path.join(os.path.dirname(os.path.normpath(sys.argv
 sys.path.append(os.path.abspath(os.path.join(tmp_dir,'../..')))
 
 from ipfs import IPFS
+import time
 
 tkroot = tk.Tk()
 tkroot.withdraw()
@@ -135,10 +136,10 @@ def installGoLang(args):
                     output = subprocess.run(['setx','PATH',user_path.strip()+go_path+';'],capture_output=True,text=True)
                     print(output.stdout,output.stderr)
                 
-                lPATH += ';'+go_path+';'+str(Path.home()/'go'/'bin')
+                lPATH += ';'+os.path.join(go_path,'bin')+';'+str(Path.home()/'go'/'bin')
                 os.environ['PATH'] = lPATH
 
-                output = subprocess.run(['setx','GOROOT',go_path],capture_output=True,text=True)
+                output = subprocess.run(['setx','GOROOT',os.path.join(go_path,'bin')],capture_output=True,text=True)
                 print(output.stdout,output.stderr)
 
                 output = subprocess.run(['setx','GOPATH',str(Path.home()/'go')],capture_output=True,text=True)
@@ -222,7 +223,7 @@ def installIPFS(args):
                     lPATH += ';'+p
                     os.environ['PATH'] = lPATH
             else:
-                p = '/usr/local/go-ipfs'
+                p = str(Path.home()/'Apps'/'go-ipfs') #'/usr/local/go-ipfs'
                 found = False
                 for tmp_path in os.environ['PATH'].split(':'):
                     if not tmp_path.strip():
@@ -236,10 +237,10 @@ def installIPFS(args):
                 else:
                     with open(os.path.join(home_dir,'.bashrc'),'a') as f:
                         f.write('\nexport PATH=$PATH:'+p+'\n')
-                    if isWindows():
-                        os.environ['PATH']+=';'+p
-                    else:
-                        os.environ['PATH']+=':'+p
+                    #if isWindows():
+                    #    os.environ['PATH']+=';'+p
+                    #else:
+                    os.environ['PATH']+=':'+p
                         
             #Generate Swarm Key for Private IPFS Network
             if args.generate_swarm_key:
@@ -295,6 +296,7 @@ def installIPFS(args):
                 os.environ['LIBP2P_FORCE_PNET']='1'
 
             #Initialize IPFS
+            print('PATH:',os.environ['PATH'])
             print("Initializing IPFS...")
             output = subprocess.run(['ipfs','init'],capture_output=True,text=True)
             print(output.stdout,output.stderr)
@@ -712,6 +714,8 @@ def installGeth(args):
                 else:
                     print("Provided path,",args.geth_init_data_dir,'is not a valid geth account data directory! Skipping init step')
 
+            sp = subprocess.Popen(['geth','--datadir',data_dir,'--networkid','2022','--http','--http.api','debug,eth,web3,personal,net,admin','--nat','extip:'+getPrimaryIP()])
+
             if args.geth_generate_bootstrap_record:
                 if not os.path.isdir('./redist/geth'):
                     os.makedirs('./redist/geth')
@@ -721,14 +725,46 @@ def installGeth(args):
                         records = f.read().split(',')
                 if not os.path.isdir(data_dir):
                     data_dir = [os.path.join(eth_path,d) for d in os.listdir(eth_path) if os.path.isdir(os.path.join(eth_path,d))][0]
-                sp = subprocess.Popen(['geth','--datadir',data_dir])
-                output = subprocess.run(['geth','attach','http://localhost:8545','--exec','admin.nodeInfo.enr'])
-                sp.terminate()
-                print(output.stdout)
-                if not output.stdout.strip() in records:
-                    records.append(output.stdout.strip())
+                    print("Using data dir = ",data_dir)
+                output = None
+                #time.sleep(5)
+                while not output or not 'enr:-' in output[0:5]:
+                    output = subprocess.run(['geth','attach','http://localhost:8545','--exec','admin.nodeInfo.enr'],capture_output=True,text=True).stdout[1:-2]
+                    print(output[1:-2])
+                #print(output.stdout,output.stderr)
+                if not output in records:
+                    records.append(output)
                 with open('./redist/geth/boot','w') as f:
                     f.write(','.join(records))
+                shutil.copy2('./redist/geth/boot',str(Path.home()/'.eth'/'boot'))
+            
+            if args.geth_generate_static_node_list:
+                if not os.path.isdir('./redist/geth'):
+                    os.makedirs('./redist/geth')
+                static_nodes = []
+                if os.path.isfile('./redist/geth/static-nodes.json'):
+                    static_nodes = json.load(open('./redist/geth/static-nodes.json','r'))
+                if not os.path.isdir(data_dir):
+                    data_dir = [os.path.join(eth_path,d) for d in os.listdir(eth_path) if os.path.isdir(os.path.join(eth_path,d))][0]
+                    print("Using data dir = ",data_dir)
+                #sp = subprocess.Popen(['geth','--datadir',data_dir,'--networkid','2022','--http','--http.api','debug,eth,web3,personal,net,admin'])
+                output = None
+                #time.sleep(5)
+                while not output or not '"enode:' in output[0:7]:
+                    output = subprocess.run(['geth','attach','http://localhost:8545','--exec','admin.nodeInfo.enode'],capture_output=True,text=True).stdout
+                    print(output)
+                #sp.terminate()
+                #print(output.stdout,output.stderr)
+                if not output in static_nodes:
+                    static_nodes.append(output)
+                json.dump(static_nodes,open('./redist/geth/static-nodes.json','w'))
+
+                account_dirs = [os.path.join(eth_path,d) for d in os.listdir(eth_path) if os.path.isdir(os.path.join(eth_path,d))]
+
+                for d in account_dirs:
+                    shutil.copy2('./redist/geth/static-nodes.json',os.path.join(d,'static-nodes.json'))
+                
+            sp.terminate()
 
             #Install py-solc-x
             try:
@@ -772,6 +808,7 @@ def parseArgs():
     parser.add_argument('--skip_geth',action='store_true',help='If set will skip the go-ethereum (Geth) client installation step')
     parser.add_argument('--geth_init_data_dir',type=str,default='',help='If provided with a valid directory, will initialize the account with the genesis block file.')
     parser.add_argument('--geth_generate_bootstrap_record',action='store_true',help='If set, will add the newly created node\'s bootstrap-node-record for use by other nodes.')
+    parser.add_argument('--geth_generate_static_node_list',action='store_true',help='If set, will append the new account id to static-nodes.json file for every account found in the ~/.eth folder to allow for sid in peer discovery')
     parser.add_argument('--force',action='store_true',help='If set will force selected components to reinstall')
     return parser.parse_args()
 
