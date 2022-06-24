@@ -35,7 +35,7 @@ class CLIApp:
         self.tracked_locations = set()
         self.loadTrackingManifest()
 
-        self.chunker = Chunker(20,6)
+        self.chunker = Chunker(20,0.3)
         if not os.path.isfile('20_20_20.json'):
             print("Generating Allocation LUT...")
             self.chunker.generateLUT('.')
@@ -224,10 +224,11 @@ class CLIApp:
                 print("Not enough peers for cluster distribution. Skipping")
                 return
 
+            print('Looking up LUT for',cl_peers+1,'total nodes and',math.ceil(cl_peers*self.chunker.required_survivors_percentage),'survivor nodes')
             
             #Add to Cluster with replication factors
             for i,id in enumerate(ids):
-                allocation_list = self.chunker.lookupChunkAlloc(cl_peers+1,self.chunker.required_survivors_percentage*(cl_peers+1),len(ids),i)
+                allocation_list = self.chunker.lookupChunkAlloc(cl_peers+1,math.ceil(self.chunker.required_survivors_percentage*(cl_peers+1)),len(ids),i)
                 allocation_peers = ','.join([ids[j][0] for j in allocation_list])
                 response = self.ipfscl.pinCID(id[1],name=os.path.join(mfs_dir,id[0]),replication=len(allocation_list),allocations=allocation_peers)
                 print(response.status_code,response.text)

@@ -33,7 +33,7 @@ def findProcsByName(name):
 def stopDaemon(name):
     proc_list = findProcsByName(name)
     for proc in proc_list:
-        print("Stopping IPFS process with PID",proc.pid)
+        print("Stopping "+ name +" process with PID",proc.pid)
         proc.kill()
 
 def ensureDaemon(name,start_cmd):
