@@ -751,7 +751,7 @@ def installGeth(args):
                 output = None
                 #time.sleep(5)
                 while not output or not '"enode:' in output[0:7]:
-                    output = subprocess.run(['geth','attach','http://localhost:8545','--exec','admin.nodeInfo.enode'],capture_output=True,text=True).stdout
+                    output = subprocess.run(['geth','attach','http://localhost:8545','--exec','admin.nodeInfo.enr'],capture_output=True,text=True).stdout
                     print(output)
                 #sp.terminate()
                 #print(output.stdout,output.stderr)
