@@ -681,6 +681,7 @@ def installGeth(args):
                         "byzantiumBlock": 0,
                         "constantinopleBlock": 0,
                         "petersburgBlock": 0,
+                        "istanbulBlock":0,
                         "clique": {
                             "period": 5,
                             "epoch": 30000
@@ -750,9 +751,10 @@ def installGeth(args):
                 #sp = subprocess.Popen(['geth','--datadir',data_dir,'--networkid','2022','--http','--http.api','debug,eth,web3,personal,net,admin'])
                 output = None
                 #time.sleep(5)
-                while not output or not '"enode:' in output[0:7]:
+                while not output or not '"enr:-' in output[0:7]:
                     output = subprocess.run(['geth','attach','http://localhost:8545','--exec','admin.nodeInfo.enr'],capture_output=True,text=True).stdout
                     print(output)
+                output = output.replace('\"','').strip()
                 #sp.terminate()
                 #print(output.stdout,output.stderr)
                 if not output in static_nodes:

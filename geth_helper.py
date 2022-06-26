@@ -10,7 +10,7 @@ import platform
 import psutil
 import subprocess
 import time
-from enum import Enum
+from enum import IntEnum
 import configparser as cfgp
 
 def getPrimaryIP():
@@ -25,7 +25,6 @@ def getPrimaryIP():
     finally:
         s.close()
     return IP
-
 
 class ContractArtifacts:
     def __init__(self):
@@ -88,7 +87,7 @@ class ContractArtifacts:
             self.address = j['address']
         return True
 
-class TxType(Enum):
+class TxType(IntEnum):
     EXCHANGE=0
     CONTRACT=1
 
@@ -108,9 +107,13 @@ class Transaction:
     def toJSON(self)->str:
         out = {}
         out['txtype'] = int(self.txtype)
-        out['txhash'] = self.txhash
-        out['txreceipt'] = self.txreceipt
+        #print(json.dumps(out['txtype']))
+        out['txhash'] = str(self.txhash)
+        #print(json.dumps(out['txhash']))
+        out['txreceipt'] = web3.Web3.toJSON(self.txreceipt)
+        #print(json.dumps(out['txreceipt']))
         out['extra'] = self.extra
+        #print(json.dumps(out['extra']))
         return json.dumps(out,indent=4,sort_keys=True)
     
     def fromJSON(self,json_str)->bool:
@@ -134,9 +137,9 @@ class LocalTxManifest:
         self.path = path
         self.transactions:list[Transaction] = []
         self.unique_ids = set()
+        self.dirty = False
         if os.path.isfile(path):
             self.load()
-        self.dirty = False
         pass
     
     def load(self,path:str=None,force=False)->bool:
@@ -188,7 +191,7 @@ class LocalTxManifest:
             out.append(t.toJSON())
         fp = open(path,'w')
         try:
-            json.dump(out,fp)
+            json.dump(out,fp,indent=4,sort_keys=True)
         except:
             print("Failed to save manifest as JSON")
             if not fp.closed:
@@ -208,7 +211,10 @@ class GethHelper:
 
         self.transaction_manifest = LocalTxManifest(local_tx_manifest_path)
         self.contract_registry = cfgp.ConfigParser()
+        self.contract_registry_path = contract_registry_path
         self.contract_registry.read(contract_registry_path)
+        if not "Contracts" in self.contract_registry:
+            self.contract_registry['Contracts'] = {}
         
         self.data_dir = ''
         self.networkid = 2022
@@ -276,6 +282,14 @@ class GethHelper:
             print("Stopping Geth process with PID",proc.pid)
             proc.kill()
         pass
+    
+    def getContractAddress(self,contract_name:str)->str:
+        if not 'Contracts' in self.contract_registry:
+            self.contract_registry['Contracts'] = {}
+            return ''
+        if not contract_name in self.contract_registry['Contracts']:
+            return ''
+        return self.contract_registry['Contracts'][contract_name]
 
     def connect(self):
         self.http = self.host and len(self.host)>6 and 'http://' in self.host[:6]
@@ -342,16 +356,48 @@ class GethHelper:
         print('Saving Contract Artifacts to',dest_dir)
         artifacts.save(dest_dir)
 
-    def callContract(self,contract_name:str,localized:bool=True,*args,**kwargs)->bool:
+    def publishContract(self,contract_name:str,*args,**kwargs)->tuple[bool,str]:
+        if not contract_name in self.contracts:
+            print("Contract with name:",contract_name,"was not found!")
+            return False,''
+        else:
+            #Otherwise publish the contract and note the transaction in the registry
+            ca = self.contracts[contract_name]
+            t = Transaction(TxType.CONTRACT)
+            contract_obj = self.session.eth.contract(abi=ca.abi,bytecode=ca.bytecode)
+            tx_hash = contract_obj.constructor(*args,**kwargs).transact()
+            tx_receipt = self.session.eth.wait_for_transaction_receipt(tx_hash)
+
+            print(tx_hash)
+            print(tx_receipt)
+
+            t.addTxInfo(tx_hash,tx_receipt,{'name':contract_name})
+            self.contract_registry['Contracts'][contract_name] =  tx_receipt.contractAddress
+            self.transaction_manifest.addTx(t)
+            
+            self.transaction_manifest.save()
+
+            with open(self.contract_registry_path,'w') as f:
+                self.contract_registry.write(f)
+            
+    def callContract(self,contract_name:str,func_name:str,localized:bool=True,func_args=[])->bool:
         if not contract_name in self.contract_registry['Contracts']:
             if not contract_name in self.contracts:
                 print("Contract with name:",contract_name,"was not found!")
                 return False
             else:
                 #Otherwise publish the contract and note the transaction in the registry
-                ct = self.contracts[contract_name]
-
-        pass
+                self.publishContract(contract_name)
+        else:
+            #Else interact with the live contract instance.
+            #TODO: Need to setup ABI access over shared MFS or cluster pins
+            #       For now assume the contract artifacts are already loaded
+            contract_inst = self.session.eth.contract(address=self.contract_registry['Contracts'][contract_name],abi=self.contracts[contract_name].abi)
+            if localized:
+                cf = contract_inst.get_function_by_name(func_name)
+                return cf(*func_args).call()
+            else:
+                return contract_inst.functions[func_name](*func_args).transact()
     
     def sendEtherToPeer(self,recipient,amount):
         pass
