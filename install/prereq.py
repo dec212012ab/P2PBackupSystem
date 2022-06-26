@@ -692,8 +692,8 @@ def installGeth(args):
                 }
                 genesis_json['extradata'] = signer_ids
                 for signer in output_lines:
-                    genesis_json['alloc'][signer] = {'balance':str(int(9e9))}
-
+                    genesis_json['alloc'][signer] = {'balance':str(int(10**18)*int(10**9))}
+                    
                 json.dump(genesis_json,open(os.path.join(eth_path,'genesis.json'),'w'),sort_keys=True,indent=4)
 
                 if not os.path.isdir('./redist/geth'):

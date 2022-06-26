@@ -33,6 +33,7 @@ class ContractArtifacts:
         self.abi = ''
         self.bytecode = ''
         self.contract_id = ''
+        self.address = ''
         self.name = ''
     
     def save(self,dest_dir):        
@@ -50,7 +51,8 @@ class ContractArtifacts:
             content['bytecode'] = self.bytecode
         if self.contract_id:
             content['id'] = self.contract_id
-        
+        if self.address:
+            content['address'] = self.address
         out = open(os.path.join(dest_dir,self.name+'.sc'),'w')
         json.dump(content,out)
         out.close()
@@ -82,7 +84,8 @@ class ContractArtifacts:
             self.bytecode = j['bytecode']
         if 'id' in j:
             self.contract_id = j['id']
-
+        if 'address' in j:
+            self.address = j['address']
         return True
 
 class TxType(Enum):
@@ -200,11 +203,12 @@ class LocalTxManifest:
 #--http.api debug,eth,web3,personal,net,admin
 class GethHelper:
     def __init__(self,host:str=None,local_tx_manifest_path=str(Path.home()/'.eth'/'tx.manifest'),contract_registry_path=str(Path.home()/'.eth'/'contracts.ini')):
-        self.contracts = {}
+        self.contracts:dict[str,ContractArtifacts] = {}
         self.session = None
 
         self.transaction_manifest = LocalTxManifest(local_tx_manifest_path)
-        self.contract_registry = None
+        self.contract_registry = cfgp.ConfigParser()
+        self.contract_registry.read(contract_registry_path)
         
         self.data_dir = ''
         self.networkid = 2022
@@ -338,7 +342,15 @@ class GethHelper:
         print('Saving Contract Artifacts to',dest_dir)
         artifacts.save(dest_dir)
 
-    def callContract(self,contract_name,localized=True,*args,**kwargs):
+    def callContract(self,contract_name:str,localized:bool=True,*args,**kwargs)->bool:
+        if not contract_name in self.contract_registry['Contracts']:
+            if not contract_name in self.contracts:
+                print("Contract with name:",contract_name,"was not found!")
+                return False
+            else:
+                #Otherwise publish the contract and note the transaction in the registry
+                ct = self.contracts[contract_name]
+
         pass
     
     def sendEtherToPeer(self,recipient,amount):
