@@ -211,9 +211,9 @@ class CLIApp:
             print("Cluster Peer Count:",cl_peers)
             
             #NOTE: Remove the unpinning 
-            for id in ids:
-                self.ipfs.execute_cmd('pin/rm',{},id[1])
-            self.ipfs.execute_cmd('repo/gc',{})
+            #for id in ids:
+            #    self.ipfs.execute_cmd('pin/rm',{},id[1])
+            #self.ipfs.execute_cmd('repo/gc',{})
 
             #alloc = self.chunker.lookupLUT(4,math.ceil((4)/3),shard_count)
             #print(alloc,4,math.ceil((4)/3),shard_count)
@@ -232,6 +232,10 @@ class CLIApp:
                 allocation_peers = ','.join([ids[j][0] for j in allocation_list])
                 response = self.ipfscl.pinCID(id[1],name=os.path.join(mfs_dir,id[0]),replication=len(allocation_list),allocations=allocation_peers)
                 print(response.status_code,response.text)
+
+            #Register the operation with the Clique with the IPFS contract
+            for id in ids:
+                self.geth.callContract('IPFS','pinned',False,{},id)
 
 
         options = [

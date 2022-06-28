@@ -32,12 +32,15 @@ def main():
                     return
                 else:
                     continue
-            unlocked = geth.session.geth.personal.unlock_account(geth.session.eth.accounts[0],pswd,0)
+            try:
+                unlocked = geth.session.geth.personal.unlock_account(geth.session.eth.accounts[0],pswd,0)
+            except:
+                unlocked = False
             if not unlocked:
                 if retry_count<=0:
                     messagebox.showerror("Tries Expired",'Number of password tries exceeded! The program will now quit.')
                     return
-                response = messagebox.askyesno("Incorrect Password","The entered password was incorrect. Try again? ("+str(retry_count)+' tries remaining)')
+                response = messagebox.askyesno("Incorrect Password","The entered password was incorrect. Try again? ("+str(retry_count-1)+' tries remaining)')
                 if response:
                     retry_count -= 1
                     continue
@@ -69,8 +72,13 @@ def main():
         #Set up peer coinbase/checksum address. 
         # NOTE: In practice will use Remote MFS pinning
         print("Looking for peers...")
+        timeout = 1
         while not geth.session.geth.admin.peers():
             time.sleep(1)
+            timeout -= 1
+            if timeout<=0:
+                print("Peer search timed out...")
+                break
         #print(geth.session.geth.admin.peers())
         
         for peer in geth.session.geth.admin.peers():
@@ -87,6 +95,7 @@ def main():
 
         #Try to get signers with direct jsonrpc request
         print(geth.getSigners())
+        geth.inspectBlocksForTransactions(0,1000)
 
         geth.stopDaemon()
         return

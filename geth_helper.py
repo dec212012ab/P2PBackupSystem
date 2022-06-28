@@ -457,7 +457,20 @@ class GethHelper:
             return response['result']
         return []
 
-    def inspectBlocksForTransactions(self,start_index,end_index,filter_local_node=True):
+    def inspectBlocksForTransactions(self,start_index:int,count:int,filter_local_node:bool=True):
+        if count<1:
+            count = 1
+        if start_index <0:
+            start_index = 0
+        
+        for i in range(start_index,start_index+count):
+            #print(i)
+            try:
+                blk = self.session.eth.get_block(i,True)
+                if blk['transactions']:
+                    print("\nBlock",i,blk['transactions'],'\n')
+            except:
+                print("Failed to get block number",i)
         pass
     
     def proposeSigner(self):
