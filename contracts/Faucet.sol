@@ -19,7 +19,7 @@ contract Faucet{
     address[] internal authorized;
 
     mapping(address=>uint) public request_map;
-    uint public distribution_amount = 10 * (10**18);
+    uint public distribution_amount = 3 * (10**18);
 
     constructor() payable{
         owner = msg.sender;
@@ -80,15 +80,27 @@ contract Faucet{
         return address(this).balance;
     }
 
-    function requestFunds(address payable _dest) public payable {
-        require(block.timestamp > request_map[msg.sender],"Requesting account is still locked from previous faucet request.");
-        require(address(this).balance > distribution_amount,"Not enough funds in faucet for distribution. Authorized nodes should donate.");
-        require(_dest.balance<distribution_amount,"Destination node already has at least 10 Ether!");
-        uint top_off_amount = distribution_amount - _dest.balance;
+    function requestFunds(address payable _dest/*, bool owner_force*/) public payable {
+        uint top_off_amount = 0;
+        //if(msg.sender != owner || owner_force){
+            require(block.timestamp > request_map[msg.sender],"Requesting account is still locked from previous faucet request.");
+            require(address(this).balance > distribution_amount,"Not enough funds in faucet for distribution. Authorized nodes should donate.");
+            require(_dest.balance<distribution_amount,"Destination node already has at least 10 Ether!");
+            top_off_amount = distribution_amount - _dest.balance;
+        //}
+        /*else{
+            if(address(this).balance < distribution_amount){
+                top_off_amount = address(this).balance;
+            }
+            else{
+                top_off_amount = distribution_amount - _dest.balance;
+            }
+        }*/
+        
 
         _dest.transfer(top_off_amount);
-        //Lock for 1 minute since we can't request if we have more than 10 ether
-        request_map[msg.sender] = block.timestamp + 1 minutes;
+        //Lock for some time since we can't request if we have more than 10 ether
+        request_map[msg.sender] = block.timestamp + 5 minutes;
     }
 
 }

@@ -2,26 +2,98 @@
 from geth_helper import *
 from pathlib import Path
 import platform
+import tkinter as tk
+from tkinter import messagebox, simpledialog, filedialog
+
+root = tk.Tk()
+root.wm_iconify()
+
+transfer_to_contract = False
 
 def main():
-    #geth = GethHelper("http://localhost:8545",str(Path.home()/'.eth'/'node1'))
     if platform.system() == 'Windows':
         geth = GethHelper("\\\\.\\pipe\\geth.ipc")
     else:
         geth = GethHelper(str(Path.home()/'.eth'/'node0'/'geth.ipc'))
     geth.startDaemon(netrestrict=['192.168.3.0/24'])
     geth.connect()
-    #print(geth.session.eth.get_balance(geth.session.eth.coinbase))
+    
     if geth.session.isConnected():
-        print(geth.session.isConnected())
-        geth.session.geth.personal.unlock_account(geth.session.eth.accounts[0],'eth')
+        #Unlock account for mining
+        pswd = ''
+        unlocked = False
+        retry_count = 10
+        while not unlocked:
+            pswd = simpledialog.askstring('Unlock Ethereum Miner [' + geth.session.geth.admin.datadir()+']','Password:',show='*')
+            if not pswd:
+                response = messagebox.askyesno("Abort?","There was no password entered into the prompt. Should the program quit?")
+                if response:
+                    return
+                else:
+                    continue
+            unlocked = geth.session.geth.personal.unlock_account(geth.session.eth.accounts[0],pswd,0)
+            if not unlocked:
+                if retry_count<=0:
+                    messagebox.showerror("Tries Expired",'Number of password tries exceeded! The program will now quit.')
+                    return
+                response = messagebox.askyesno("Incorrect Password","The entered password was incorrect. Try again? ("+str(retry_count)+' tries remaining)')
+                if response:
+                    retry_count -= 1
+                    continue
+                else:
+                    return
+        
         geth.session.geth.miner.start()
+
+        #Scan for new contracts
+        for item in os.listdir('./contracts'):
+            split_item = os.path.splitext(item)
+            if split_item[-1] == '.sol':
+                print(os.path.join('./contracts',split_item[0]+'.sc'))
+                if os.path.isfile(os.path.join('./contracts',split_item[0]+'.sc')):
+                    geth.importContractArtifact(split_item[0],os.path.join('./contracts',split_item[0]+'.sc'))
+                    print("Imported precompiled contract:",os.path.join('./contracts',split_item[0]+'.sc'))
+                elif not str(split_item[0]).lower() in geth.contract_registry:
+                    response = messagebox.askyesno("Discovered Contract Source",'Found contract ' + item + '. Should it be compiled and published?')
+                    if response:
+                        geth.compileContractSource(split_item[0],os.path.join('./contracts',item))
+                        geth.publishContract(split_item[0])
+        
+        if transfer_to_contract:
+            print('Donating 100 ether to faucet...')
+            geth.callContract('Faucet','donateToFaucet',False,tx={'value':Web3.toWei(100,'ether')})
+            amount = geth.callContract('Faucet','getFaucetBalance',True)
+            print('Contract has',Web3.fromWei(amount,'ether'),'ether')
+        
+        #Set up peer coinbase/checksum address. 
+        # NOTE: In practice will use Remote MFS pinning
+        print("Looking for peers...")
+        while not geth.session.geth.admin.peers():
+            time.sleep(1)
+        #print(geth.session.geth.admin.peers())
+        for peer in geth.session.geth.admin.peers():
+            if not peer['id'] in geth.peer_coinbase_registry:
+                response = messagebox.askyesno("Discovered New Peer",'Found new peer ' + peer['id'] + '. Do you want to enter its checksum address?')
+                if response:
+                    addr = simpledialog.askstring("Checksum Address Entry",'Address:')
+                    if not 'Coinbase' in geth.peer_coinbase_registry:
+                        geth.peer_coinbase_registry['Coinbase'] = {}
+                    geth.peer_coinbase_registry['Coinbase'][peer['id']] = addr
+                    with open(geth.peer_coinbase_registry_path,'w') as f:
+                        geth.peer_coinbase_registry.write(f)
+                    print("Calling faucet contract for new peer",peer['id'])
+                    geth.callContract('Faucet','requestFunds',False,{},addr)
+
+
+
+        geth.stopDaemon()
+        return
 
         #geth.compileContractSource('Faucet','./contracts/Faucet.sol')
         
         #geth.publishContract('Faucet')
 
-        print(geth.session.geth.admin.peers()[0]['enode'])
+        #print(geth.session.geth.admin.peers()[0]['enode'])
 
         geth.importContractArtifact('Faucet','contracts/Faucet.sc')
         time.sleep(10)
@@ -31,23 +103,34 @@ def main():
         #    'value': Web3.toWei(5,'ether')
         #}
 
-        tx = geth.session.eth.contract(address=geth.getContractAddress('Faucet'),abi=geth.contracts['Faucet'].abi).functions
-        tx['donateToFaucet']().transact({
-            'value': Web3.toWei(5,'ether')
-        })
+        #tx = geth.session.eth.contract(address=geth.getContractAddress('Faucet'),abi=geth.contracts['Faucet'].abi).functions
+        #tx['donateToFaucet']().transact({
+            #'value': Web3.toWei(geth.session.eth.get_balance(geth.session.eth.coinbase),'Wei'),
+        #    Web3.toWei(5,'ether'),
+        #})
 
 
         #geth.session.eth.send_transaction(tx)
 
+
+        time.sleep(15)
+
         result = geth.callContract(
             'Faucet',
             'getFaucetBalance',
-            True
+        #    'requestFunds',
+            True,
+        #    geth.session.eth.coinbase
         )
 
         print(result)
 
-        return 
+        print('I have',geth.session.eth.get_balance(geth.session.eth.coinbase))
+        print("Quitting")
+
+        geth.stopDaemon()
+
+        return
 
         geth.callContract(
             'Faucet',
@@ -94,10 +177,9 @@ def main():
 
         #print(hello)
     
-    print("Quitting")
-
-    geth.stopDaemon()
+    
 
 
 if __name__ == '__main__':
     main()
+    root.destroy()

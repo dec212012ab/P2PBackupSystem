@@ -13,6 +13,7 @@ import time
 from enum import IntEnum
 import configparser as cfgp
 
+
 def getPrimaryIP():
     s = socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
     s.settimeout(0)
@@ -205,7 +206,11 @@ class LocalTxManifest:
 
 #--http.api debug,eth,web3,personal,net,admin
 class GethHelper:
-    def __init__(self,host:str=None,local_tx_manifest_path=str(Path.home()/'.eth'/'tx.manifest'),contract_registry_path=str(Path.home()/'.eth'/'contracts.ini')):
+    def __init__(self,host:str=None,
+        local_tx_manifest_path=str(Path.home()/'.eth'/'tx.manifest'),
+        contract_registry_path=str(Path.home()/'.eth'/'contracts.ini'),
+        peer_coinbase_registry_path=str(Path.home()/'.eth'/'peers.ini')):
+
         self.contracts:dict[str,ContractArtifacts] = {}
         self.session = None
 
@@ -215,7 +220,10 @@ class GethHelper:
         self.contract_registry.read(contract_registry_path)
         if not "Contracts" in self.contract_registry:
             self.contract_registry['Contracts'] = {}
-        
+
+        self.peer_coinbase_registry = cfgp.ConfigParser()
+        self.peer_coinbase_registry_path = peer_coinbase_registry_path
+
         self.data_dir = ''
         self.networkid = 2022
         self.host = host
@@ -240,6 +248,7 @@ class GethHelper:
         networkid:int=2022,
         ip:str=getPrimaryIP(),
         netrestrict:list[str]=[],
+        boot_file=str(Path.home()/'.eth'/'boot'),
         force=True
         ):
         if force:
@@ -253,6 +262,13 @@ class GethHelper:
             cmd.append('--netrestrict')
             cmd.append(','.join(netrestrict))
             self.netrestrict = netrestrict
+
+        if os.path.isfile(boot_file):
+            bootnodes = ''
+            with open(boot_file,'r') as f:
+                bootnodes = f.read().strip()
+            if bootnodes:
+                cmd += ['--bootnodes',bootnodes]
 
         if platform.system()=='Windows':
             subprocess.Popen(cmd,start_new_session=True,close_fds=True,creationflags=subprocess.DETACHED_PROCESS)
@@ -268,6 +284,7 @@ class GethHelper:
             time.sleep(5)
         #    print(output.stdout,output.stderr)
         #    break
+        print(cmd)
         print("Geth daemon started!")
         
     def stopDaemon(self):
@@ -316,12 +333,11 @@ class GethHelper:
                     time.sleep(1)
         if self.session.isConnected():
             self.session.middleware_onion.inject(geth_poa.geth_poa_middleware,layer=0)
-            print(self.session.eth.accounts)
+            #print(self.session.eth.accounts)
             self.session.eth.default_account = self.session.eth.accounts[0]
         else:
             print("Failed to connect to Geth client via IPC")
-        pass
-        
+
     def importContractArtifact(self,contract_name:str,filepath:str)->bool:
         artifacts = ContractArtifacts()
         if artifacts.load(filepath):
@@ -380,26 +396,56 @@ class GethHelper:
             with open(self.contract_registry_path,'w') as f:
                 self.contract_registry.write(f)
             
-    def callContract(self,contract_name:str,func_name:str,localized:bool=True,func_args=[])->bool:
-        if not contract_name in self.contract_registry['Contracts']:
-            if not contract_name in self.contracts:
-                print("Contract with name:",contract_name,"was not found!")
-                return False
+    def callContract(self,contract_name:str,func_name:str,localized:bool=True,tx={},*args,**kwargs)->bool:
+        try:
+            if not contract_name in self.contract_registry['Contracts']:
+                if not contract_name in self.contracts:
+                    print("Contract with name:",contract_name,"was not found!")
+                    return False
+                else:
+                    #Otherwise publish the contract and note the transaction in the registry
+                    self.publishContract(contract_name)
             else:
-                #Otherwise publish the contract and note the transaction in the registry
-                self.publishContract(contract_name)
-        else:
-            #Else interact with the live contract instance.
-            #TODO: Need to setup ABI access over shared MFS or cluster pins
-            #       For now assume the contract artifacts are already loaded
-            contract_inst = self.session.eth.contract(address=self.contract_registry['Contracts'][contract_name],abi=self.contracts[contract_name].abi)
-            if localized:
-                cf = contract_inst.get_function_by_name(func_name)
-                return cf(*func_args).call()
-            else:
-                return contract_inst.functions[func_name](*func_args).transact()
+                #Else interact with the live contract instance.
+                #TODO: Need to setup ABI access over shared MFS or cluster pins
+                #       For now assume the contract artifacts are already loaded
+                contract_inst = self.session.eth.contract(address=self.contract_registry['Contracts'][contract_name],abi=self.contracts[contract_name].abi)
+                if localized:
+                    cf = contract_inst.get_function_by_name(func_name)
+                    output = cf(*args,**kwargs).call(tx)
+                    return output
+                else:
+                    tx_hash = contract_inst.functions[func_name](*args,**kwargs).transact(tx)
+                    tx_receipt = self.session.eth.wait_for_transaction_receipt(tx_hash)
+                    t = Transaction(txtype=TxType.CONTRACT)
+                    t.addTxInfo(tx_hash,tx_receipt)
+                    success = self.transaction_manifest.addTx(t)
+                    if success:
+                        self.transaction_manifest.save()
+                    else:
+                        print("ERROR: Could not add transaction to manifest!")
+                        print(t.toJSON())
+        except Exception as e:
+            print(e)
+            return False
+        return True
     
-    def sendEtherToPeer(self,recipient,amount):
+    def sendEtherToPeer(self,recipient_address,amount_wei):
+        tx = {
+            'from': self.session.eth.coinbase,
+            'to': recipient_address,
+            'value': amount_wei
+        }
+        t = Transaction()
+        tx_hash = self.session.eth.send_transaction(tx)
+        tx_receipt = self.session.eth.wait_for_transaction_receipt(tx_hash)
+        t.addTxInfo(tx_hash,tx_receipt)
+        success = self.transaction_manifest.addTx(t)
+        if success:
+            self.transaction_manifest.save()
+        else:
+            print("ERROR: Could not add transaction to manifest!")
+            print(t.toJSON())
         pass
     
     def inspectBlocksForTransactions(self,start_index,end_index,filter_local_node=True):
