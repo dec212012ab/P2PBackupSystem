@@ -223,6 +223,9 @@ class GethHelper:
 
         self.peer_coinbase_registry = cfgp.ConfigParser()
         self.peer_coinbase_registry_path = peer_coinbase_registry_path
+        self.peer_coinbase_registry.read(peer_coinbase_registry_path)
+        if not 'Coinbase' in self.peer_coinbase_registry:
+            self.peer_coinbase_registry['Coinbase'] = {}
 
         self.data_dir = ''
         self.networkid = 2022
@@ -448,6 +451,12 @@ class GethHelper:
             print(t.toJSON())
         pass
     
+    def getSigners(self):
+        response = self.session.provider.make_request('clique_getSigners',[])
+        if 'result' in response:
+            return response['result']
+        return []
+
     def inspectBlocksForTransactions(self,start_index,end_index,filter_local_node=True):
         pass
     

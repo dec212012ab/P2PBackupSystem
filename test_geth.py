@@ -6,7 +6,8 @@ import tkinter as tk
 from tkinter import messagebox, simpledialog, filedialog
 
 root = tk.Tk()
-root.wm_iconify()
+root.withdraw()
+root.iconify()
 
 transfer_to_contract = False
 
@@ -71,20 +72,21 @@ def main():
         while not geth.session.geth.admin.peers():
             time.sleep(1)
         #print(geth.session.geth.admin.peers())
+        
         for peer in geth.session.geth.admin.peers():
-            if not peer['id'] in geth.peer_coinbase_registry:
+            if not str(peer['id']) in geth.peer_coinbase_registry['Coinbase']:
                 response = messagebox.askyesno("Discovered New Peer",'Found new peer ' + peer['id'] + '. Do you want to enter its checksum address?')
                 if response:
-                    addr = simpledialog.askstring("Checksum Address Entry",'Address:')
-                    if not 'Coinbase' in geth.peer_coinbase_registry:
-                        geth.peer_coinbase_registry['Coinbase'] = {}
-                    geth.peer_coinbase_registry['Coinbase'][peer['id']] = addr
+                    addr = simpledialog.askstring("Checksum Address Entry",'Address:')                    
+                    geth.peer_coinbase_registry['Coinbase'][str(peer['id'])] = addr
                     with open(geth.peer_coinbase_registry_path,'w') as f:
                         geth.peer_coinbase_registry.write(f)
                     print("Calling faucet contract for new peer",peer['id'])
                     geth.callContract('Faucet','requestFunds',False,{},addr)
 
 
+        #Try to get signers with direct jsonrpc request
+        print(geth.getSigners())
 
         geth.stopDaemon()
         return

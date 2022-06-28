@@ -1,4 +1,5 @@
 import os
+from attr import field
 import requests
 
 class DotDict(dict):
@@ -44,7 +45,42 @@ class IPFS:
             tmp.text = "Connection to http://"+str(self.host)+':'+str(self.port)+' failed. Is the IPFS Daemon running?'
             return tmp
 
-#TODO: check for arg support specifically for /add
+class ClusterPin:
+    def __init__(self):
+        self.cid:str = ''
+        self.name:str = ''
+        self.pin_state:str = ''
+        self.min_replication:int = 0
+        self.max_replication:int = 0
+        self.allocations:list[str] = []
+        self.pin_type:str = ''
+        self.metadata:str = ''
+        self.expiry:str = ''
+        self.timestamp:str = ''
+        pass        
+
+    def loadFromString(self,s:str):
+        fields = s.split('|')
+        
+        self.cid = fields[0].strip()
+        self.name = fields[1].strip()
+        self.pin_state = fields[2].strip()
+        fields[3] = fields[3].replace('Repl. Factor:','').strip()
+        if '--' in fields[3]:
+            fields[3] = fields[3].split('--')
+            self.min_replication = int(fields[3][0])
+            self.max_replication = int(fields[3][1])
+        else:
+            self.min_replication = int(fields[3])
+            self.max_replication = self.min_replication
+        fields[4] = fields[4].replace('Allocations:','').strip()
+        self.allocations = fields[4][1:-1].split(' ')
+        self.pin_type = fields[5].strip()
+        self.metadata = fields[6].replace('Metadata:','').strip()
+        self.expiry = fields[7].replace('Exp:','').strip()
+        self.timestamp = fields[8].replace('Added:','').strip()
+        pass
+
 class IPFSCluster:
     def __init__(self,host_ip='localhost',port='9094'):
         self.host = host_ip
