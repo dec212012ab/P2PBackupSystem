@@ -23,7 +23,7 @@ from tkinter import filedialog
 class CLIApp:
     def __init__(self,ipfs_obj:IPFS,ipfs_cluster_obj:IPFSCluster,geth_obj:GethHelper):
         self.title = "P2P Distributed Backup System"
-        self.menu = ConsoleMenu(self.title,"Main Menu",clear_screen=True)
+        self.menu = ConsoleMenu(self.title,"Main Menu",clear_screen=False)
         self.menu_entries = DotDict()
 
         self.constructed = False
@@ -235,7 +235,10 @@ class CLIApp:
 
             #Register the operation with the Clique with the IPFS contract
             for id in ids:
-                self.geth.callContract('IPFS','pinned',False,{},id)
+                print('Posting',id[1],'to Clique...')
+                success = self.geth.callContract('IPFS','pinned',False,{},id[1])
+                print("Transaction success:", success)
+
 
 
         options = [

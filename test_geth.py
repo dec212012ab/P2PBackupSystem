@@ -10,8 +10,10 @@ root.withdraw()
 root.iconify()
 
 transfer_to_contract = False
+timeout = 10
 
 def main():
+    global transfer_to_contract, timeout
     if platform.system() == 'Windows':
         geth = GethHelper("\\\\.\\pipe\\geth.ipc")
     else:
@@ -46,8 +48,6 @@ def main():
                     continue
                 else:
                     return
-        
-        geth.session.geth.miner.start()
 
         #Scan for new contracts
         for item in os.listdir('./contracts'):
@@ -60,19 +60,22 @@ def main():
                 elif not str(split_item[0]).lower() in geth.contract_registry:
                     response = messagebox.askyesno("Discovered Contract Source",'Found contract ' + item + '. Should it be compiled and published?')
                     if response:
+                        geth.session.geth.miner.start()
                         geth.compileContractSource(split_item[0],os.path.join('./contracts',item))
                         geth.publishContract(split_item[0])
+                        geth.session.geth.miner.stop()
         
         if transfer_to_contract:
             print('Donating 100 ether to faucet...')
+            geth.session.geth.miner.start()
             geth.callContract('Faucet','donateToFaucet',False,tx={'value':Web3.toWei(100,'ether')})
+            geth.session.geth.miner.stop()
             amount = geth.callContract('Faucet','getFaucetBalance',True)
             print('Contract has',Web3.fromWei(amount,'ether'),'ether')
         
         #Set up peer coinbase/checksum address. 
         # NOTE: In practice will use Remote MFS pinning
         print("Looking for peers...")
-        timeout = 1
         while not geth.session.geth.admin.peers():
             time.sleep(1)
             timeout -= 1
@@ -90,7 +93,11 @@ def main():
                     with open(geth.peer_coinbase_registry_path,'w') as f:
                         geth.peer_coinbase_registry.write(f)
                     print("Calling faucet contract for new peer",peer['id'])
-                    geth.callContract('Faucet','requestFunds',False,{},addr)
+                    geth.session.geth.miner.start()
+                    while not geth.callContract('Faucet','requestFunds',False,{},Web3.toChecksumAddress(addr.lower())):
+                        print("Faucet is still locked... Trying again after 30 seconds...")
+                        time.sleep(30)
+                    geth.session.geth.miner.stop()
 
 
         #Try to get signers with direct jsonrpc request

@@ -729,8 +729,8 @@ def installGeth(args):
                     print("Using data dir = ",data_dir)
                 output = None
                 #time.sleep(5)
-                while not output or not 'enr:-' in output[0:5]:
-                    output = subprocess.run(['geth','attach','http://localhost:8545','--exec','admin.nodeInfo.enr'],capture_output=True,text=True).stdout[1:-2]
+                while not output or not 'enode' in output[0:5]:
+                    output = subprocess.run(['geth','attach','http://localhost:8545','--exec','admin.nodeInfo.enode'],capture_output=True,text=True).stdout[1:-2]
                     print(output[1:-2])
                 #print(output.stdout,output.stderr)
                 if not output in records:
@@ -751,8 +751,8 @@ def installGeth(args):
                 #sp = subprocess.Popen(['geth','--datadir',data_dir,'--networkid','2022','--http','--http.api','debug,eth,web3,personal,net,admin'])
                 output = None
                 #time.sleep(5)
-                while not output or not '"enr:-' in output[0:7]:
-                    output = subprocess.run(['geth','attach','http://localhost:8545','--exec','admin.nodeInfo.enr'],capture_output=True,text=True).stdout
+                while not output or not '"enode' in output[0:7]:
+                    output = subprocess.run(['geth','attach','http://localhost:8545','--exec','admin.nodeInfo.enode'],capture_output=True,text=True).stdout
                     print(output)
                 output = output.replace('\"','').strip()
                 #sp.terminate()

@@ -10,12 +10,15 @@ import subprocess
 import sys
 import time
 
+from pathlib import Path
 
 from ipfs import IPFS, IPFSCluster
 from geth_helper import GethHelper
 from app_cli import CLIApp
 from chunker import Chunker
 
+import tkinter as tk
+from tkinter import simpledialog, messagebox
 
 def isWindows():
     return platform.system() == 'Windows'
@@ -53,10 +56,58 @@ def ensureDaemon(name,start_cmd):
 def parseArgs():
     parser = argparse.ArgumentParser()
     parser.add_argument('--stop_daemons',action='store_true',help='If set then the program stops any existing IPFS, IPFS-Cluster, or Geth daemons and exits.')
+    parser.add_argument('--netrestrict',type=str,default='192.168.3.0/24',help='Comma separated list of restricted subnets for Geth. Gets passed directly to the Geth daemon.')
+    parser.add_argument('--contract_dir',type=str,default='./contracts',help='The directory with the .sol or .sc files with smart contract information.')
     return parser.parse_args()
 
-def main():
+def unlockSigner(geth):
+    pswd = ''
+    unlocked = False
+    retry_count = 10
+    while not unlocked:
+        pswd = simpledialog.askstring('Unlock Ethereum Miner [' + geth.session.geth.admin.datadir()+']','Password:',show='*')
+        if not pswd:
+            response = messagebox.askyesno("Abort?","There was no password entered into the prompt. Should the program quit?")
+            if response:
+                return False
+            else:
+                continue
+        try:
+            unlocked = geth.session.geth.personal.unlock_account(geth.session.eth.accounts[0],pswd,0)
+        except:
+            unlocked = False
+        if not unlocked:
+            if retry_count<=0:
+                messagebox.showerror("Tries Expired",'Number of password tries exceeded! The program will now quit.')
+                return False
+            response = messagebox.askyesno("Incorrect Password","The entered password was incorrect. Try again? ("+str(retry_count-1)+' tries remaining)')
+            if response:
+                retry_count -= 1
+                continue
+            else:
+                return False
+    return unlocked
 
+def scanForContracts(geth,contract_dir):
+    for item in os.listdir(contract_dir):
+        split_item = os.path.splitext(item)
+        if split_item[-1] == '.sol':
+            print(os.path.join(contract_dir,split_item[0]+'.sc'))
+            if os.path.isfile(os.path.join(contract_dir,split_item[0]+'.sc')):
+                geth.importContractArtifact(split_item[0],os.path.join(contract_dir,split_item[0]+'.sc'))
+                print("Imported precompiled contract:",os.path.join(contract_dir,split_item[0]+'.sc'))
+            elif not str(split_item[0]).lower() in geth.contract_registry:
+                response = messagebox.askyesno("Discovered Contract Source",'Found contract ' + item + '. Should it be compiled and published?')
+                if response:
+                    geth.session.geth.miner.start()
+                    geth.compileContractSource(split_item[0],os.path.join(contract_dir,item))
+                    geth.publishContract(split_item[0])
+                    geth.session.geth.miner.stop()
+
+def main():
+    root = tk.Tk()
+    root.withdraw()
+    root.iconify()
     '''c = Chunker(20,6)
     #c.generateLUT('.')
     paths = [os.path.abspath('.')]
@@ -72,7 +123,8 @@ def main():
         print("Stopping existing daemons...")
         stopDaemon('ipfs')
         stopDaemon('ipfs-cluster-service')
-        stopDaemon('geth')
+        g = GethHelper()
+        g.stopDaemon()
         exit(0)
 
     ensureDaemon('IPFS',['ipfs','daemon'])
@@ -88,13 +140,34 @@ def main():
 
     ipfs_helper = IPFS()
     ipfscl_helper = IPFSCluster()
-    geth_helper = GethHelper()
+    if isWindows():
+        geth_helper = GethHelper("\\\\.\\pipe\\geth.ipc")
+    else:
+        geth_helper = GethHelper(str(Path.home()/'.eth'/'node0'/'geth.ipc'))
+
+    geth_helper.startDaemon(netrestrict=args.netrestrict.split(','))
+    geth_helper.connect()
+
+    if geth_helper.session.isConnected():
+        print("Geth connected!")
+    else:
+        print("Could not start Geth. Quitting.")
+        exit(1)
+
+    if geth_helper.session.eth.coinbase.lower() in geth_helper.getSigners():
+        unlockSigner(geth_helper)
+        geth_helper.session.geth.miner.start()
+    
+    scanForContracts(geth_helper,args.contract_dir)
+    
+    print(geth_helper.contract_registry['Contracts'])
 
     cli = CLIApp(ipfs_helper,ipfscl_helper,geth_helper)
     cli.construct()
     
     cli.menu.show()
 
+    root.destroy()
     pass
 
 if __name__ == '__main__':

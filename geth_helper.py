@@ -216,12 +216,14 @@ class GethHelper:
 
         self.transaction_manifest = LocalTxManifest(local_tx_manifest_path)
         self.contract_registry = cfgp.ConfigParser()
+        self.contract_registry.optionxform = str
         self.contract_registry_path = contract_registry_path
         self.contract_registry.read(contract_registry_path)
         if not "Contracts" in self.contract_registry:
             self.contract_registry['Contracts'] = {}
 
         self.peer_coinbase_registry = cfgp.ConfigParser()
+        self.peer_coinbase_registry.optionxform = str
         self.peer_coinbase_registry_path = peer_coinbase_registry_path
         self.peer_coinbase_registry.read(peer_coinbase_registry_path)
         if not 'Coinbase' in self.peer_coinbase_registry:
@@ -401,33 +403,42 @@ class GethHelper:
             
     def callContract(self,contract_name:str,func_name:str,localized:bool=True,tx={},*args,**kwargs)->bool:
         try:
+        #if True:
+            print(1)
             if not contract_name in self.contract_registry['Contracts']:
+                print(2)
                 if not contract_name in self.contracts:
                     print("Contract with name:",contract_name,"was not found!")
                     return False
                 else:
+                    print(3)
                     #Otherwise publish the contract and note the transaction in the registry
                     self.publishContract(contract_name)
             else:
                 #Else interact with the live contract instance.
                 #TODO: Need to setup ABI access over shared MFS or cluster pins
                 #       For now assume the contract artifacts are already loaded
+                print(4)
                 contract_inst = self.session.eth.contract(address=self.contract_registry['Contracts'][contract_name],abi=self.contracts[contract_name].abi)
                 if localized:
+                    print(5)
                     cf = contract_inst.get_function_by_name(func_name)
                     output = cf(*args,**kwargs).call(tx)
                     return output
                 else:
+                    print(6)
                     tx_hash = contract_inst.functions[func_name](*args,**kwargs).transact(tx)
                     tx_receipt = self.session.eth.wait_for_transaction_receipt(tx_hash)
                     t = Transaction(txtype=TxType.CONTRACT)
                     t.addTxInfo(tx_hash,tx_receipt)
                     success = self.transaction_manifest.addTx(t)
                     if success:
+                        print(7)
                         self.transaction_manifest.save()
                     else:
                         print("ERROR: Could not add transaction to manifest!")
                         print(t.toJSON())
+                    
         except Exception as e:
             print(e)
             return False
@@ -466,11 +477,16 @@ class GethHelper:
         for i in range(start_index,start_index+count):
             #print(i)
             try:
-                blk = self.session.eth.get_block(i,True)
+                blk = self.session.eth.get_block(i,False)
                 if blk['transactions']:
-                    print("\nBlock",i,blk['transactions'],'\n')
+                    #print("\nBlock",i,blk['transactions'],'\n')
+                    print("\nBlock",i,blk,'\n')
+                    for j,tx in enumerate(blk['transactions']):
+                        receipt = self.session.eth.get_transaction_receipt(tx)['logs']
+                        print('Transaction',j,"Receipt:\n",receipt)
             except:
-                print("Failed to get block number",i)
+                #print("Failed to get block number",i)
+                pass
         pass
     
     def proposeSigner(self):
