@@ -481,9 +481,13 @@ class GethHelper:
                 if blk['transactions']:
                     #print("\nBlock",i,blk['transactions'],'\n')
                     print("\nBlock",i,blk,'\n')
+                    contract_inst = self.session.eth.contract(address=self.contract_registry['Contracts']['IPFS'],abi=self.contracts['IPFS'].abi)
                     for j,tx in enumerate(blk['transactions']):
-                        receipt = self.session.eth.get_transaction_receipt(tx)['logs']
-                        print('Transaction',j,"Receipt:\n",receipt)
+                        receipt = self.session.eth.get_transaction_receipt(tx)
+                        pin_events = contract_inst.events.Pinned().processReceipt(receipt)
+                        print(pin_events)
+                        
+                        #print('Transaction',j,"Receipt:\n",)
             except:
                 #print("Failed to get block number",i)
                 pass
