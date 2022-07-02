@@ -39,13 +39,16 @@ def stopDaemon(name):
         print("Stopping "+ name +" process with PID",proc.pid)
         proc.kill()
 
-def ensureDaemon(name,start_cmd):
+def ensureDaemon(name,start_cmd,hide_output=True):
     if len(findProcsByName(start_cmd[0]))<1:
         print(name,"daemon is not running. Starting up the",name,"daemon...")
         if isWindows():
             subprocess.Popen(start_cmd,start_new_session=True,close_fds=True,creationflags=subprocess.DETACHED_PROCESS)
         else:
-            subprocess.Popen(start_cmd,start_new_session=True,close_fds=True)
+            if hide_output:
+                subprocess.Popen(start_cmd,start_new_session=True,close_fds=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            else:
+                subprocess.Popen(start_cmd,start_new_session=True,close_fds=True)
         while not findProcsByName(start_cmd[0]):
             print("Waiting for",name,"daemon...")
             time.sleep(1)
@@ -60,12 +63,12 @@ def parseArgs():
     parser.add_argument('--contract_dir',type=str,default='./contracts',help='The directory with the .sol or .sc files with smart contract information.')
     return parser.parse_args()
 
-def unlockSigner(geth):
+def unlockCoinbase(geth):
     pswd = ''
     unlocked = False
     retry_count = 10
     while not unlocked:
-        pswd = simpledialog.askstring('Unlock Ethereum Miner [' + geth.session.geth.admin.datadir()+']','Password:',show='*')
+        pswd = simpledialog.askstring('Unlock Ethereum Account [' + geth.session.geth.admin.datadir()+']','Password:',show='*')
         if not pswd:
             response = messagebox.askyesno("Abort?","There was no password entered into the prompt. Should the program quit?")
             if response:
@@ -107,7 +110,6 @@ def scanForContracts(geth,contract_dir):
 def main():
     root = tk.Tk()
     root.withdraw()
-    root.iconify()
     '''c = Chunker(20,6)
     #c.generateLUT('.')
     paths = [os.path.abspath('.')]
@@ -132,7 +134,7 @@ def main():
         output = subprocess.run(['ipfs','--version'],capture_output=True,text=True)
         if 'ipfs version ' in output.stdout:
             break
-    ensureDaemon('IPFS-Cluster-Service',['ipfs-cluster-service','daemon'])
+    ensureDaemon('IPFS-Cluster-Service',['ipfs-cluster-service','daemon'],False)
     while True:
         output = subprocess.run(['ipfs-cluster-service','--version'],capture_output=True,text=True)
         if 'ipfs-cluster-service version ' in output.stdout:
@@ -145,7 +147,7 @@ def main():
     else:
         geth_helper = GethHelper(str(Path.home()/'.eth'/'node0'/'geth.ipc'))
 
-    geth_helper.startDaemon(netrestrict=args.netrestrict.split(','))
+    geth_helper.startDaemon(netrestrict=args.netrestrict.split(','),hide_output=False)
     geth_helper.connect()
 
     if geth_helper.session.isConnected():
@@ -154,10 +156,13 @@ def main():
         print("Could not start Geth. Quitting.")
         exit(1)
 
+    if not unlockCoinbase(geth_helper):
+        root.destroy()
+        return
+
     if geth_helper.session.eth.coinbase.lower() in geth_helper.getSigners():
-        unlockSigner(geth_helper)
         geth_helper.session.geth.miner.start()
-    
+    root.destroy()
     scanForContracts(geth_helper,args.contract_dir)
     
     print(geth_helper.contract_registry['Contracts'])
@@ -167,7 +172,6 @@ def main():
     
     cli.menu.show()
 
-    root.destroy()
     pass
 
 if __name__ == '__main__':

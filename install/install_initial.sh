@@ -1,0 +1,1 @@
+python prereq.py --generate_swarm_key --ipfs_bootstrap_id --geth_generate_genesis_block --geth_generate_bootstrap_record --geth_generate_static_node_list --force

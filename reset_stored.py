@@ -13,6 +13,11 @@ for k in hashes.keys():
         a.execute_cmd('pin/rm',{},k).text
 #            )
 
+output = a.execute_cmd('files/ls',{},'//').json()
+if output['Entries']:
+    for entry in output['Entries']:
+        print(a.execute_cmd('files/rm',{},'//'+entry['Name'],force=True).text)
+
 #print(
 a.execute_cmd('repo/gc',{}).text
 #    )

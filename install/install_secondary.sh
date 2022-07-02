@@ -1,0 +1,1 @@
+python3 prereq.py --swarm_key_file redist/ipfs/swarm.key --ipfs_bootstrap_id --ipfs_bootstrap_file redist/ipfs/bootstrap_id.txt --cluster_secret_file redist/ipfs-cluster/cluster_secret --genesis_block_file redist/geth/genesis.json --geth_generate_bootstrap_record --geth_generate_static_node_list --force

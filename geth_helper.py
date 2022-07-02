@@ -254,7 +254,8 @@ class GethHelper:
         ip:str=getPrimaryIP(),
         netrestrict:list[str]=[],
         boot_file=str(Path.home()/'.eth'/'boot'),
-        force=True
+        force=True,
+        hide_output=True
         ):
         if force:
             self.stopDaemon()
@@ -262,7 +263,7 @@ class GethHelper:
         self.data_dir = data_dir
         self.networkid=networkid
 
-        cmd = ['geth','--datadir',data_dir,'--networkid',str(networkid),'--nat','extip:'+ip]
+        cmd = ['geth','--datadir',data_dir,'--networkid',str(networkid),'--nat','extip:'+ip,'--gcmode','archive']
         if netrestrict:
             cmd.append('--netrestrict')
             cmd.append(','.join(netrestrict))
@@ -278,7 +279,10 @@ class GethHelper:
         if platform.system()=='Windows':
             subprocess.Popen(cmd,start_new_session=True,close_fds=True,creationflags=subprocess.DETACHED_PROCESS)
         else:
-            subprocess.Popen(cmd,start_new_session=True,close_fds=True)
+            if hide_output:
+                subprocess.Popen(cmd,start_new_session=True,close_fds=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+            else:
+                subprocess.Popen(cmd,start_new_session=True,close_fds=True)
         while not self.checkDaemonRunning():
             print("Waiting for geth daemon...")
             time.sleep(1)
@@ -403,37 +407,30 @@ class GethHelper:
             
     def callContract(self,contract_name:str,func_name:str,localized:bool=True,tx={},*args,**kwargs)->bool:
         try:
-        #if True:
-            print(1)
             if not contract_name in self.contract_registry['Contracts']:
-                print(2)
                 if not contract_name in self.contracts:
                     print("Contract with name:",contract_name,"was not found!")
                     return False
                 else:
-                    print(3)
                     #Otherwise publish the contract and note the transaction in the registry
                     self.publishContract(contract_name)
             else:
                 #Else interact with the live contract instance.
                 #TODO: Need to setup ABI access over shared MFS or cluster pins
                 #       For now assume the contract artifacts are already loaded
-                print(4)
                 contract_inst = self.session.eth.contract(address=self.contract_registry['Contracts'][contract_name],abi=self.contracts[contract_name].abi)
                 if localized:
-                    print(5)
                     cf = contract_inst.get_function_by_name(func_name)
                     output = cf(*args,**kwargs).call(tx)
                     return output
                 else:
-                    print(6)
                     tx_hash = contract_inst.functions[func_name](*args,**kwargs).transact(tx)
                     tx_receipt = self.session.eth.wait_for_transaction_receipt(tx_hash)
+                    print(tx_receipt)
                     t = Transaction(txtype=TxType.CONTRACT)
                     t.addTxInfo(tx_hash,tx_receipt)
                     success = self.transaction_manifest.addTx(t)
                     if success:
-                        print(7)
                         self.transaction_manifest.save()
                     else:
                         print("ERROR: Could not add transaction to manifest!")
@@ -478,16 +475,22 @@ class GethHelper:
             #print(i)
             try:
                 blk = self.session.eth.get_block(i,False)
+                #print(blk)
                 if blk['transactions']:
                     #print("\nBlock",i,blk['transactions'],'\n')
                     print("\nBlock",i,blk,'\n')
                     contract_inst = self.session.eth.contract(address=self.contract_registry['Contracts']['IPFS'],abi=self.contracts['IPFS'].abi)
                     for j,tx in enumerate(blk['transactions']):
                         receipt = self.session.eth.get_transaction_receipt(tx)
+                        print('Transaction',j,"Receipt:\n",)
                         pin_events = contract_inst.events.Pinned().processReceipt(receipt)
-                        print(pin_events)
+                        print('Pin Events',pin_events)
+                        pin_events = contract_inst.events.Unpinned().processReceipt(receipt)
+                        print('Unpin Events',pin_events)
+                        pin_events = contract_inst.events.BackupPosted().processReceipt(receipt)
+                        print('BackupPosted Events',pin_events)
                         
-                        #print('Transaction',j,"Receipt:\n",)
+                        
             except:
                 #print("Failed to get block number",i)
                 pass

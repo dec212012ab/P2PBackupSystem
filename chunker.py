@@ -187,7 +187,7 @@ class Chunker:
                 print(output.stdout,output.stderr)
             except:
                 print("Failed to open 7z CLI application. Falling back to Py7zr")
-                self.stageChunks(staging_dir,tracked_paths,False)
+                self.stageChunks(staging_dir,tracked_paths,use_subprocess=False)
         
         return len(os.listdir(staging_dir))
 
