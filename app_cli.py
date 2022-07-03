@@ -228,20 +228,8 @@ class CLIApp:
         if not sender_filter:
             sender_filter = self.geth.session.eth.accounts
         max_block = self.geth.session.eth.block_number
-
-        '''max_block = 0
-        while True:
-            try:
-                self.geth.session.eth.get_block(max_block)
-                max_block += 1
-            except:
-                max_block -= 1
-                break'''
-
-        print(max_block)
-
+        
         points = []
-
         for i in range(max_block,0,-1):
             try:
                 blk = self.geth.session.eth.get_block(i)
@@ -255,8 +243,9 @@ class CLIApp:
                         pin_events = contract_inst.events.BackupPosted().processReceipt(reciept)
                         for event in pin_events:
                             #if prefix in event['args']['backup_name']:
+                            #print(event)
                             if event['args']['sender'] in sender_filter:
-                                points.append((os.path.splitext(event['args']['backup_name'])[0],event['blockNumber']))
+                                points.append((os.path.splitext(event['args']['backup_name'])[0],event['blockNumber'],tx))
                             if len(points)==restrict_count:
                                 break
                         if len(points)==restrict_count:
@@ -265,6 +254,14 @@ class CLIApp:
                 print('Error:',e)
 
         return points
+
+    def listRecoveryPointsMFS(self):
+        points = self.getRecoveryPointsMFS()
+        if not points:
+            print('No recovery points found for local machine')
+        else:
+            for i,point in enumerate(points):
+                print(i+1,':',point)
 
     def listRecoveryPoints(self):
         eth_points = self.getRecoveryPointsEth()
@@ -280,29 +277,78 @@ class CLIApp:
         pass
 
     def listRecoveryPointsPeer(self):
+        tracked = list(self.geth.peer_coinbase_registry['Coinbase'].keys())
         l = self.geth.session.geth.admin.peers()
+
+        selection_options = []
+
         print(l)
         if not l:
             print('No peers detected...')
         for peer in l:
             if peer['id'] in self.geth.peer_coinbase_registry['Coinbase']:
-                #print("Found coinbase for",peer['id'])
-                points = self.getRecoveryPointsEth(sender_filter=[self.geth.peer_coinbase_registry['Coinbase'][peer['id']]])
-                if not points:
-                    print('Could not find recovery points for peer:',peer['id'])
-                else:
-                    print("Peer:",peer['id'])
-                    for index,point in enumerate(points):
-                        print('\t'+str(index)+': '+point[0])
+                selection_options.append(peer['id']+' (ACTIVE)')
+        
+        for item in tracked:
+            if not item in selection_options and not item+' (ACTIVE)' in selection_options:
+                selection_options.append(item)
+        
+        selection_options += ['Cancel']
 
+        selection_index = SelectionMenu.get_selection(selection_options,'Select Peer',show_exit_option=False)
+
+        if selection_index == len(selection_options)-1:
+            return
+        else:
+            sender_filter = []
+            if '(ACTIVE)' in selection_options[selection_index]:
+                filtered_id = selection_options[selection_index].replace('(ACTIVE)','').strip()
+                sender_filter.append(self.geth.peer_coinbase_registry['Coinbase'][filtered_id])
+            else:
+                sender_filter.append(self.geth.peer_coinbase_registry['Coinbase'][selection_options[selection_index]])
+
+            points = self.getRecoveryPointsEth(sender_filter=sender_filter)
+            if not points:
+                print('Could not find recovery points for peer:',peer['id'])
+            else:
+                print("Peer:",peer['id'])
+                for index,point in enumerate(points):
+                    print('\t'+str(index)+': '+point[0])
+
+    def runRecovery(self):
+        points = self.getRecoveryPointsEth()
+        #selection_index = SelectionMenu.get_selection([item[0] for item in points]+['Cancel'],show_exit_option=False)
+        selection_index = 0 
+        if selection_index == len(points):
+            return
+        reciept = self.geth.session.eth.get_transaction_receipt(points[selection_index][2])
+        contract_inst = self.geth.session.eth.contract(address=self.geth.contract_registry['Contracts']['IPFS'],abi=self.geth.contracts['IPFS'].abi)
+        sender_filter = self.geth.session.eth.accounts
+
+        pin_events = contract_inst.events.BackupPosted().processReceipt(reciept)
+        for event in pin_events:
+            if event['args']['sender'] in sender_filter:
+                pairings = json.loads(event['args']['pairings'])
+                dest_dir = str(Path.home()/'Downloads')
+                dest_dir = os.path.join(dest_dir,pairings[0][0].split('.')[0])
+                if not os.path.isdir(dest_dir):
+                    os.makedirs(dest_dir)
+                for pair in pairings:
+                    print(pair)
+                    response = self.ipfs.execute_cmd('cat',{},pair[1])
+                    if response.status_code == 200:
+                        with open(os.path.join(dest_dir,pair[0]),'wb') as f:
+                            f.write(response.content)
+                        print("Saved",pair[0],'to',os.path.join(dest_dir,pair[0]))
 
     def createRecoveryMenu(self):
         recovery_menu = ConsoleMenu(self.title,'Recovery Menu',clear_screen=False)
 
         options = [
-            FunctionItem('List Recovery Points',lambda: self.listRecoveryPoints()),
-            FunctionItem('List Peer Recovery Points',lambda: self.listRecoveryPointsPeer()),
-            FunctionItem('Run Recovery',lambda: print('TODO')),
+            FunctionItem('List Recovery Points on Blockchain',lambda: self.listRecoveryPoints()),
+            FunctionItem('List Recovery Points on MFS',lambda: self.listRecoveryPointsMFS()),
+            FunctionItem('List Peer Recovery Points on Blockchain',lambda: self.listRecoveryPointsPeer()),
+            FunctionItem('Run Recovery',lambda: self.runRecovery()),
             FunctionItem('Run Recovery For Peer Node',lambda: print("TODO")),
             FunctionItem('Verify Recovery Point',lambda:print('TODO'))
         ]
@@ -332,8 +378,9 @@ class CLIApp:
 
         options = [
             FunctionItem('Set Data Shard Limit',lambda:print('TODO')),
-            FunctionItem('Set Storage Pool Size',lambda:print('TODO')),
-            FunctionItem('List Active Signer Nodes',lambda:print('TODO')),            
+            #FunctionItem('Set Storage Pool Size',lambda:print('TODO')),
+            FunctionItem('List Active Signer Nodes',lambda:print('TODO')),
+            FunctionItem('Track New Peer Coinbase',lambda:print('TODO')),
         ]
 
         for opt in options:

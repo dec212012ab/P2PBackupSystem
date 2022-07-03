@@ -24,7 +24,7 @@ contract IPFS{
         emit BackupPosted(msg.sender,backup_name,fragment_names);
     }
 
-    event BackupPosted(address sender,string backup_name,string fragment_names);
+    event BackupPosted(address sender,string backup_name,string pairings);
     event Pinned(address sender, string filename, string hash);
     event Unpinned(address sender, string filename, string hash);
 
