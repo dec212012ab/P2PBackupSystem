@@ -20,6 +20,9 @@ from chunker import Chunker
 import tkinter as tk
 from tkinter import simpledialog, messagebox
 
+import threading
+from signers import SignerMonitor
+
 def isWindows():
     return platform.system() == 'Windows'
 
@@ -170,7 +173,18 @@ def main():
     cli = CLIApp(ipfs_helper,ipfscl_helper,geth_helper)
     cli.construct()
     
+    signer_monitor:SignerMonitor = SignerMonitor(geth_helper)
+    monitor_thread = threading.Thread(target=signer_monitor.run)
+    
+    print("Starting monitor thread...")
+    monitor_thread.start()
+    
     cli.menu.show()
+
+    signer_monitor.stopSignal()
+
+    print("Waiting for monitor thread to exit")
+    monitor_thread.join()
 
     pass
 

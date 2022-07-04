@@ -19,7 +19,7 @@ contract Faucet{
     address[] internal authorized;
 
     mapping(address=>uint) public request_map;
-    uint public distribution_amount = 3 * (10**18);
+    uint public distribution_amount = 10 * (10**18);
 
     constructor() payable{
         owner = msg.sender;

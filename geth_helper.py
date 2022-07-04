@@ -344,6 +344,7 @@ class GethHelper:
             self.session.middleware_onion.inject(geth_poa.geth_poa_middleware,layer=0)
             #print(self.session.eth.accounts)
             self.session.eth.default_account = self.session.eth.accounts[0]
+
         else:
             print("Failed to connect to Geth client via IPC")
 
@@ -405,7 +406,7 @@ class GethHelper:
             with open(self.contract_registry_path,'w') as f:
                 self.contract_registry.write(f)
             
-    def callContract(self,contract_name:str,func_name:str,localized:bool=True,tx={},*args,**kwargs)->bool:
+    def callContract(self,contract_name:str,func_name:str,localized:bool=True,tx={},*args,**kwargs):
         try:
             if not contract_name in self.contract_registry['Contracts']:
                 if not contract_name in self.contracts:
@@ -483,10 +484,10 @@ class GethHelper:
                     for j,tx in enumerate(blk['transactions']):
                         receipt = self.session.eth.get_transaction_receipt(tx)
                         print('Transaction',j,"Receipt:\n",)
-                        pin_events = contract_inst.events.Pinned().processReceipt(receipt)
-                        print('Pin Events',pin_events)
-                        pin_events = contract_inst.events.Unpinned().processReceipt(receipt)
-                        print('Unpin Events',pin_events)
+                        #pin_events = contract_inst.events.Pinned().processReceipt(receipt)
+                        #print('Pin Events',pin_events)
+                        #pin_events = contract_inst.events.Unpinned().processReceipt(receipt)
+                        #print('Unpin Events',pin_events)
                         pin_events = contract_inst.events.BackupPosted().processReceipt(receipt)
                         print('BackupPosted Events',pin_events)
                         
@@ -496,8 +497,29 @@ class GethHelper:
                 pass
         pass
     
-    def proposeSigner(self):
-        pass
+    def proposeSigner(self,addr):
+        response = self.session.provider.make_request('clique_propose',[addr,True])
+        if 'result' in response:
+            return response['result']
+        return []
+
+    def demoteSigner(self,addr):
+        response = self.session.provider.make_request('clique_propose',[addr,False])
+        if 'result' in response:
+            return response['result']
+        return []
+
+    def getProposals(self):
+        response = self.session.provider.make_request('clique_proposals',[])
+        if 'result' in response:
+            return response['result']
+        return []
+    
+    def discardProposal(self,addr):
+        response = self.session.provider.make_request('clique_discard',[addr])
+        if 'result' in response:
+            return response['result']
+        return []
     
 
 

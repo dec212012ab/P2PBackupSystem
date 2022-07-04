@@ -170,7 +170,7 @@ class Chunker:
         print("Total size in Bytes:",total_size)
         print("Chunk Size:",chunk_size)
         if not use_subprocess:
-            archive_name.replace('.7z','.py7zr')
+            archive_name = archive_name.replace('.7z','.py7zr')
             with multivolumefile.open(os.path.join(staging_dir,archive_name),'ab',chunk_size) as archive:
                 with py7zr.SevenZipFile(archive,'w') as f:
                     for i,p in enumerate(tracked_paths):

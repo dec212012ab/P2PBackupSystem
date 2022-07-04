@@ -1,4 +1,6 @@
 
+import sys
+import shutil
 from geth_helper import *
 from pathlib import Path
 import platform
@@ -66,9 +68,9 @@ def main():
                         geth.session.geth.miner.stop()
         
         if transfer_to_contract:
-            print('Donating 100 ether to faucet...')
+            print('Donating 1000 ether to faucet...')
             geth.session.geth.miner.start()
-            geth.callContract('Faucet','donateToFaucet',False,tx={'value':Web3.toWei(100,'ether')})
+            geth.callContract('Faucet','donateToFaucet',False,tx={'value':Web3.toWei(1000,'ether')})
             geth.session.geth.miner.stop()
             amount = geth.callContract('Faucet','getFaucetBalance',True)
             print('Contract has',Web3.fromWei(amount,'ether'),'ether')
@@ -99,10 +101,20 @@ def main():
                         time.sleep(30)
                     time.sleep(30)
                     geth.session.geth.miner.stop()
+        
+        #Add self
+        if not geth.session.geth.admin.node_info()['id'] in geth.peer_coinbase_registry['Coinbase']:
+            geth.peer_coinbase_registry['Coinbase'][geth.session.geth.admin.node_info()['id']] = geth.session.eth.coinbase
+            with open(geth.peer_coinbase_registry_path,'w') as f:
+                geth.peer_coinbase_registry.write(f)
 
+
+        shutil.copy(str(Path.home()/'.eth'/'contracts.ini'),str(os.path.join(os.path.dirname(sys.argv[0]),'install/redist/geth/')))
+        shutil.copy(str(geth.peer_coinbase_registry_path),str(os.path.join(os.path.dirname(sys.argv[0]),'install/redist/geth/')))
 
         #Try to get signers with direct jsonrpc request
         print(geth.getSigners())
+        print(geth.session.eth.coinbase)
 
         print('Inspecting...')
         geth.inspectBlocksForTransactions(0,1000)
