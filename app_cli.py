@@ -375,7 +375,13 @@ class CLIApp:
             
             self.runRecovery(sender_filter=sender_filter)
 
-
+    def printCoinbasePeers(self):
+        print("ID => Coinbase")
+        for peer in self.geth.peer_coinbase_registry['Coinbase'].keys():
+            print(peer,'=>',self.geth.peer_coinbase_registry['Coinbase'][peer])
+        for peer in [item['id'] for item in self.geth.session.geth.admin.peers()]:
+            if not peer in self.geth.peer_coinbase_registry:
+                print(peer,'=>',"Unknown")
 
     def createRecoveryMenu(self):
         recovery_menu = ConsoleMenu(self.title,'Recovery Menu',clear_screen=False)
@@ -386,7 +392,7 @@ class CLIApp:
             FunctionItem('List Peer Recovery Points on Blockchain',lambda: self.listRecoveryPointsPeer()),
             FunctionItem('Run Recovery',lambda: self.runRecovery()),
             FunctionItem('Run Recovery For Peer Node',lambda: self.runRecoveryPeer()),
-            FunctionItem('Verify Recovery Point',lambda:print('TODO'))
+            #FunctionItem('Verify Recovery Point',lambda:print('TODO'))
         ]
 
         for opt in options:
@@ -398,10 +404,12 @@ class CLIApp:
         status_menu = ConsoleMenu(self.title,'Status Menu',clear_screen=False)
 
         options = [
-            FunctionItem('List Cluster Peers',lambda:print('TODO')),
-            FunctionItem('Local Node Info',lambda:print('TODO')),
-            FunctionItem('List Active Signer Nodes',lambda:print('TODO')),
-
+            FunctionItem('List Cluster Peers',lambda:print(self.ipfscl.peers().json())),
+            FunctionItem('Local Node Info',lambda: print(self.geth.session.geth.admin.node_info())),
+            FunctionItem('List Active Signer Nodes',lambda:print(self.geth.getSigners())),
+            FunctionItem('Get Local Ether Balance',lambda: print(self.geth.session.fromWei(self.geth.session.eth.get_balance(self.geth.session.eth.coinbase),'ether')),'ether'),
+            FunctionItem('Get Faucet Contract Balance',lambda: print(self.geth.session.fromWei(self.geth.callContract('Faucet','getFaucetBalance',True),'ether'))),
+            FunctionItem('List Peer Coinbase Addresses',lambda: self.printCoinbasePeers())
         ]
 
         for opt in options:
@@ -415,7 +423,7 @@ class CLIApp:
         options = [
             FunctionItem('Set Data Shard Limit',lambda:print('TODO')),
             #FunctionItem('Set Storage Pool Size',lambda:print('TODO')),
-            FunctionItem('List Active Signer Nodes',lambda:print('TODO')),
+            #FunctionItem('List Active Signer Nodes',lambda:print('TODO')),
             FunctionItem('Track New Peer Coinbase',lambda:print('TODO')),
         ]
 

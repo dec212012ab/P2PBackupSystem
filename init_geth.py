@@ -11,7 +11,7 @@ root = tk.Tk()
 root.withdraw()
 root.iconify()
 
-transfer_to_contract = True
+transfer_to_contract = False
 timeout = 10
 
 def main():
@@ -20,7 +20,7 @@ def main():
         geth = GethHelper("\\\\.\\pipe\\geth.ipc")
     else:
         geth = GethHelper(str(Path.home()/'.eth'/'node0'/'geth.ipc'))
-    geth.startDaemon(netrestrict=['192.168.3.0/24'])
+    geth.startDaemon(netrestrict=['192.168.3.0/24','192.168.2.0/24'])
     geth.connect()
     
     if geth.session.isConnected():
