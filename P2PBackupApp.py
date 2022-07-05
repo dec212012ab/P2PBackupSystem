@@ -137,7 +137,7 @@ def main():
         output = subprocess.run(['ipfs','--version'],capture_output=True,text=True)
         if 'ipfs version ' in output.stdout:
             break
-    ensureDaemon('IPFS-Cluster-Service',['ipfs-cluster-service','daemon'],False)
+    ensureDaemon('IPFS-Cluster-Service',['ipfs-cluster-service','daemon'],True)
     while True:
         output = subprocess.run(['ipfs-cluster-service','--version'],capture_output=True,text=True)
         if 'ipfs-cluster-service version ' in output.stdout:
@@ -150,7 +150,7 @@ def main():
     else:
         geth_helper = GethHelper(str(Path.home()/'.eth'/'node0'/'geth.ipc'))
 
-    geth_helper.startDaemon(netrestrict=args.netrestrict.split(','),hide_output=False)
+    geth_helper.startDaemon(netrestrict=args.netrestrict.split(','),hide_output=True)
     geth_helper.connect()
 
     if geth_helper.session.isConnected():
