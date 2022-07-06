@@ -427,7 +427,7 @@ class GethHelper:
                 else:
                     tx_hash = contract_inst.functions[func_name](*args,**kwargs).transact(tx)
                     tx_receipt = self.session.eth.wait_for_transaction_receipt(tx_hash)
-                    print(tx_receipt)
+                    #print(tx_receipt)
                     t = Transaction(txtype=TxType.CONTRACT)
                     t.addTxInfo(tx_hash,tx_receipt)
                     success = self.transaction_manifest.addTx(t)

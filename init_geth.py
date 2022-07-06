@@ -135,8 +135,15 @@ def main():
         #print('Inspecting...')
         #geth.inspectBlocksForTransactions(0,1000)
 
-        #geth.stopDaemon()
+        #Reduce locktime for now
+        print("Resetting lockout time")
         geth.session.geth.miner.start()
+        response = geth.callContract('Faucet','setLockTimeSeconds',False,{},600)
+        geth.session.geth.miner.stop()
+        print('Lock time modified:',response)
+
+        geth.stopDaemon()
+        #geth.session.geth.miner.start()
         return
 
 if __name__ == '__main__':

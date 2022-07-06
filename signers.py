@@ -24,8 +24,11 @@ class SignerMonitor:
         t0_exit = t0_count
 
         exiting_nodes = self.geth.callContract('ExitSigner','getExitingNodes')
-        if self.geth.session.eth.coinbase in exiting_nodes:
+        
+        if type(exiting_nodes) == list and self.geth.session.eth.coinbase in exiting_nodes:
             self.geth.callContract('ExitSigner','finalizeExit',False)
+        else:
+            print(exiting_nodes)
         
 
         while not self._thread_exit:
@@ -57,7 +60,7 @@ class SignerMonitor:
                             for peer in sorted(peers,key=lambda d: d['id']):
                                 logging.info('Looking at peer '+peer['id'])
                                 if peer['id'] in self.geth.peer_coinbase_registry['Coinbase']:
-                                    cb_addr = self.geth.peer_coinbase_registry['Coinbase'][peer['id']]
+                                    cb_addr = self.geth.peer_coinbase_registry['Coinbase'][peer['id']].lower()
                                     if not cb_addr in signers and not cb_addr in exiting_nodes:
                                         logging.info('Proposing signer: '+cb_addr)
                                         self.geth.proposeSigner(cb_addr)
@@ -66,8 +69,9 @@ class SignerMonitor:
                 t0_count = time.time()
             
             #Prune offline signers
+            
             if t1-t0_rot >= self.rotation_interval_s:
-                signers = self.geth.getSigners()
+                '''signers = self.geth.getSigners()
                 if len(signers)>1:
                    if self.geth.session.eth.coinbase.lower() in signers:
                         peers = [self.geth.peer_coinbase_registry['Coinbase'][p['id']].lower() for p in self.geth.session.geth.admin.peers() if p['id'] in self.geth.peer_coinbase_registry['Coinbase']]
@@ -75,9 +79,9 @@ class SignerMonitor:
                             if not signer in peers:
                                 logging.info("Demoting offline signer")
                                 self.geth.demoteSigner(signer)
-                            pass
+                            pass'''
                             
-                        '''peers = sorted([p['id'] for p in self.geth.session.geth.admin.peers()])
+                '''        peers = sorted([p['id'] for p in self.geth.session.geth.admin.peers()])
                         for peer in peers:
                             logging.info('Checking peer '+peer+' for rotation')
                             if peer in self.geth.peer_coinbase_registry['Coinbase']:
