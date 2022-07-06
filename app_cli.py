@@ -404,7 +404,7 @@ class CLIApp:
         status_menu = ConsoleMenu(self.title,'Status Menu',clear_screen=False)
 
         options = [
-            FunctionItem('List Cluster Peers',lambda:print(self.ipfscl.peers().json())),
+            FunctionItem('List Cluster Peers',lambda:[print(json.loads(p)['id']) for p in self.ipfscl.peers().text.split()]),
             FunctionItem('Local Node Info',lambda: print(self.geth.session.geth.admin.node_info())),
             FunctionItem('List Active Signer Nodes',lambda:print(self.geth.getSigners())),
             FunctionItem('Get Local Ether Balance',lambda: print(self.geth.session.fromWei(self.geth.session.eth.get_balance(self.geth.session.eth.coinbase),'ether')),'ether'),

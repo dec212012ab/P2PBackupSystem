@@ -11,7 +11,7 @@ root = tk.Tk()
 root.withdraw()
 root.iconify()
 
-transfer_to_contract = False
+transfer_to_contract = True
 timeout = 10
 
 def main():
@@ -20,7 +20,7 @@ def main():
         geth = GethHelper("\\\\.\\pipe\\geth.ipc")
     else:
         geth = GethHelper(str(Path.home()/'.eth'/'node0'/'geth.ipc'))
-    geth.startDaemon(netrestrict=['192.168.3.0/24','192.168.2.0/24'])
+    geth.startDaemon(netrestrict=['192.168.3.0/24','192.168.2.0/24'],hide_output=False)
     geth.connect()
     
     if geth.session.isConnected():
@@ -66,6 +66,14 @@ def main():
                         geth.compileContractSource(split_item[0],os.path.join('./contracts',item))
                         geth.publishContract(split_item[0])
                         geth.session.geth.miner.stop()
+
+        #Reduce locktime for now
+        print("Reducing lockout time")
+        geth.session.geth.miner.start()
+        response = geth.callContract('Faucet','setLockTimeSeconds',False,{},0)
+        geth.session.geth.miner.stop()
+        print('Lock time modified:',response)
+
         
         if transfer_to_contract:
             print('Donating 1000 ether to faucet...')
@@ -85,12 +93,18 @@ def main():
                 print("Peer search timed out...")
                 break
         #print(geth.session.geth.admin.peers())
+
+        peer_path = os.path.join(os.path.dirname(sys.argv[0]),'install/redist/geth/peers')
         
         for peer in geth.session.geth.admin.peers():
-            if not str(peer['id']) in geth.peer_coinbase_registry['Coinbase']:
-                response = messagebox.askyesno("Discovered New Peer",'Found new peer ' + peer['id'] + '. Do you want to enter its checksum address?')
-                if response:
-                    addr = simpledialog.askstring("Checksum Address Entry",'Address:')                    
+            if not str(peer['id']) in geth.peer_coinbase_registry['Coinbase'] or geth.session.eth.get_balance(geth.peer_coinbase_registry['Coinbase'][peer['id']])<Web3.toWei(10,'ether'):
+                #response = messagebox.askyesno("Discovered New Peer",'Found new peer ' + peer['id'] + '. Do you want to enter its checksum address?')
+                #if response:
+                if peer['id'] in os.listdir(peer_path):
+                    #addr = simpledialog.askstring("Checksum Address Entry",'Address:')
+                    f = open(os.path.join(peer_path,peer['id']))
+                    addr = f.read().strip()
+                    f.close()
                     geth.peer_coinbase_registry['Coinbase'][str(peer['id'])] = addr
                     with open(geth.peer_coinbase_registry_path,'w') as f:
                         geth.peer_coinbase_registry.write(f)
@@ -100,6 +114,8 @@ def main():
                         print("Faucet is still locked... Trying again after 30 seconds...")
                         time.sleep(30)
                     time.sleep(30)
+
+                    print("Peer has",Web3.fromWei(geth.session.eth.get_balance(geth.peer_coinbase_registry['Coinbase'][peer['id']]),'ether'),'ether')
                     geth.session.geth.miner.stop()
         
         #Add self
@@ -116,10 +132,11 @@ def main():
         print(geth.getSigners())
         print(geth.session.eth.coinbase)
 
-        print('Inspecting...')
-        geth.inspectBlocksForTransactions(0,1000)
+        #print('Inspecting...')
+        #geth.inspectBlocksForTransactions(0,1000)
 
-        geth.stopDaemon()
+        #geth.stopDaemon()
+        geth.session.geth.miner.start()
         return
 
 if __name__ == '__main__':

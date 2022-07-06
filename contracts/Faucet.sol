@@ -19,6 +19,7 @@ contract Faucet{
     address[] internal authorized;
 
     mapping(address=>uint) public request_map;
+    uint lock_time_s = 600;
     uint public distribution_amount = 10 * (10**18);
 
     constructor() payable{
@@ -63,6 +64,9 @@ contract Faucet{
         }
     }
 
+    function setLockTimeSeconds(uint new_lock_time_s) public restrictToOwner{
+        lock_time_s = new_lock_time_s;
+    }
 
     function setOwner(address new_owner) public restrictToOwner {
         owner = new_owner;
@@ -100,7 +104,7 @@ contract Faucet{
 
         _dest.transfer(top_off_amount);
         //Lock for some time since we can't request if we have more than 10 ether
-        request_map[msg.sender] = block.timestamp + 5 minutes;
+        request_map[msg.sender] = block.timestamp + lock_time_s;
     }
 
 }
