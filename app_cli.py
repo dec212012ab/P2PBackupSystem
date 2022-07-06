@@ -308,7 +308,7 @@ class CLIApp:
 
             points = self.getRecoveryPointsEth(sender_filter=sender_filter)
             if not points:
-                print('Could not find recovery points for peer:',peer['id'])
+                print('Could not find recovery points for peer:',selection_options[selection_index])
             else:
                 print("Peer:",selection_options[selection_index].replace('(ACTIVE)','').strip())
                 for index,point in enumerate(points):
@@ -380,7 +380,9 @@ class CLIApp:
         for peer in self.geth.peer_coinbase_registry['Coinbase'].keys():
             print(peer,'=>',self.geth.peer_coinbase_registry['Coinbase'][peer])
         for peer in [item['id'] for item in self.geth.session.geth.admin.peers()]:
-            if not peer in self.geth.peer_coinbase_registry:
+            if peer == self.geth.session.geth.admin.node_info()['id']:
+                print(peer,'=>','Self')
+            elif not peer in self.geth.peer_coinbase_registry:
                 print(peer,'=>',"Unknown")
 
     def createRecoveryMenu(self):
@@ -407,7 +409,7 @@ class CLIApp:
             FunctionItem('List Cluster Peers',lambda:[print(json.loads(p)['id']) for p in self.ipfscl.peers().text.split()]),
             FunctionItem('Local Node Info',lambda: print(self.geth.session.geth.admin.node_info())),
             FunctionItem('List Active Signer Nodes',lambda:print(self.geth.getSigners())),
-            FunctionItem('Get Local Ether Balance',lambda: print(self.geth.session.fromWei(self.geth.session.eth.get_balance(self.geth.session.eth.coinbase),'ether')),'ether'),
+            FunctionItem('Get Local Ether Balance',lambda: print(self.geth.session.fromWei(self.geth.session.eth.get_balance(self.geth.session.eth.coinbase),'ether'),'ether')),
             FunctionItem('Get Faucet Contract Balance',lambda: print(self.geth.session.fromWei(self.geth.callContract('Faucet','getFaucetBalance',True),'ether'))),
             FunctionItem('List Peer Coinbase Addresses',lambda: self.printCoinbasePeers())
         ]

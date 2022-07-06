@@ -62,7 +62,7 @@ def ensureDaemon(name,start_cmd,hide_output=True):
 def parseArgs():
     parser = argparse.ArgumentParser()
     parser.add_argument('--stop_daemons',action='store_true',help='If set then the program stops any existing IPFS, IPFS-Cluster, or Geth daemons and exits.')
-    parser.add_argument('--netrestrict',type=str,default='192.168.3.0/24',help='Comma separated list of restricted subnets for Geth. Gets passed directly to the Geth daemon.')
+    parser.add_argument('--netrestrict',type=str,default='192.168.3.0/24,192.168.2.0/24',help='Comma separated list of restricted subnets for Geth. Gets passed directly to the Geth daemon.')
     parser.add_argument('--contract_dir',type=str,default='./contracts',help='The directory with the .sol or .sc files with smart contract information.')
     return parser.parse_args()
 

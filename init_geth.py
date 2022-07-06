@@ -76,9 +76,9 @@ def main():
 
         
         if transfer_to_contract:
-            print('Donating 1000 ether to faucet...')
+            print('Donating a quarter of node ether to faucet...')
             geth.session.geth.miner.start()
-            geth.callContract('Faucet','donateToFaucet',False,tx={'value':Web3.toWei(1000,'ether')})
+            geth.callContract('Faucet','donateToFaucet',False,tx={'value':Web3.toWei(geth.session.eth.get_balance(geth.session.eth.coinbase)//4,'ether')})
             geth.session.geth.miner.stop()
             amount = geth.callContract('Faucet','getFaucetBalance',True)
             print('Contract has',Web3.fromWei(amount,'ether'),'ether')
@@ -144,6 +144,13 @@ def main():
 
         geth.stopDaemon()
         #geth.session.geth.miner.start()
+
+        contracts_path = os.path.join(os.path.dirname(sys.argv[0]),'contracts')
+        
+        if os.path.isdir(os.path.join(os.path.dirname(sys.argv[0]),'install/redist/geth/contracts')):
+            shutil.rmtree(os.path.join(os.path.dirname(sys.argv[0]),'install/redist/geth/contracts'),True)
+        shutil.copytree(contracts_path,os.path.join(os.path.dirname(sys.argv[0]),'install/redist/geth/contracts'))
+
         return
 
 if __name__ == '__main__':

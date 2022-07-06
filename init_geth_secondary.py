@@ -15,6 +15,7 @@ if not os.path.isdir(peer_path):
     os.makedirs(peer_path)
 
 checksum_addr = Web3.toChecksumAddress(g.session.eth.coinbase)
+print('ID:',g.session.geth.admin.node_info()['id'])
 print('CHECKSUM: ',checksum_addr)
 with open(os.path.join(peer_path,g.session.geth.admin.node_info()['id']),'w') as f:
     f.write(checksum_addr)
