@@ -1,3 +1,4 @@
+from web3 import Web3
 from geth_helper import GethHelper
 import time
 import logging
@@ -16,6 +17,11 @@ class SignerMonitor:
         self.exit_interval_s = 20
         self.geth = geth
         self._thread_exit = False
+        self.top_off_threshold_ether = 5
+        self.donate_threshold_ether = 12
+
+        self.use_fifo_rotation:bool = True
+        self.signer_fifo:dict[str,int] = {}
 
     def stopSignal(self):
         self._thread_exit = True
@@ -52,6 +58,8 @@ class SignerMonitor:
             return not timeout_triggered
         return False
 
+
+
     def run(self):
         t0_count = time.time()
         t0_rot = t0_count
@@ -80,6 +88,16 @@ class SignerMonitor:
             if not self.geth.session.eth.mining:
                 logging.info("Starting miner")
                 self.geth.session.geth.miner.start()
+            
+            local_balance_wei = self.geth.session.eth.get_balance(self.geth.session.eth.coinbase)
+            if Web3.fromWei(local_balance_wei,'ether') <= self.top_off_threshold_ether:
+                logging.info("Requesting funds from faucet")
+                self.geth.callContract('Faucet','requestFunds',False,{},self.geth.session.eth.coinbase)
+            
+            if Web3.fromWei(local_balance_wei,'ether') >= self.donate_threshold_ether:
+                logging.info('Donating excess to faucet')
+                donate_amount = local_balance_wei - Web3.toWei(self.donate_threshold_ether,'ether')
+                self.geth.callContract('Faucet','donateToFaucet',False,tx={'value':donate_amount})
             
             #Check exiting node
             if t1-t0_exit>=self.exit_interval_s:
@@ -118,10 +136,29 @@ class SignerMonitor:
                 t0_count = time.time()
             
             if t1-t0_rot >= self.rotation_interval_s:
-                if not self.geth.callContract('ExitSigner','isOwner'):
-                    logging.info("Rotation triggered.")
-                    self.exitFromSignerList()
-                    t0_rot = time.time()
+                if self.use_fifo_rotation:
+                    signers = self.geth.getSigners()
+                    for s in signers:
+                        if not self.signer_fifo.get(s,None):
+                            self.signer_fifo[s]=1
+                        else:
+                            self.signer_fifo[s]+=1
+                    for s in self.signer_fifo.keys():
+                        if not s in signers:
+                            self.signer_fifo[s] = -1
+                        if self.geth.callContract('ExitSigner','isOwner',True,{},s):
+                            self.signer_fifo[s] = -2
+                    demote_target = max(self.signer_fifo,key=self.signer_fifo.get)
+                    if self.signer_fifo[demote_target]<=0:
+                        t0_rot = time.time()
+                    else:
+                        self.geth.demoteSigner(demote_target)
+                    pass
+                else:
+                    if not self.geth.callContract('ExitSigner','isOwner',True,{},self.geth.session.eth.coinbase):
+                        logging.info("Rotation triggered.")
+                        self.exitFromSignerList()
+                        t0_rot = time.time()
             
             
             

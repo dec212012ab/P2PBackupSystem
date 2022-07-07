@@ -42,8 +42,8 @@ contract ExitSigner{
         _;
     }*/
 
-    function isOwner() view public returns (bool retVal){
-        return msg.sender == owner;
+    function isOwner(address addr) view public returns (bool retVal){
+        return addr == owner;
     }
 
     function canExit() view public returns (bool retVal){
