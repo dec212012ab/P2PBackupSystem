@@ -12,7 +12,7 @@ root.withdraw()
 root.iconify()
 
 transfer_to_contract = True
-timeout = 10
+timeout = 120
 
 def main():
     global transfer_to_contract, timeout
@@ -76,9 +76,9 @@ def main():
 
         
         if transfer_to_contract:
-            print('Donating a quarter of node ether to faucet...')
+            print('Donating 1000 node ether to faucet...')
             geth.session.geth.miner.start()
-            geth.callContract('Faucet','donateToFaucet',False,tx={'value':Web3.toWei(geth.session.eth.get_balance(geth.session.eth.coinbase)//4,'ether')})
+            geth.callContract('Faucet','donateToFaucet',False,tx={'value':Web3.toWei(1000,'ether')})
             geth.session.geth.miner.stop()
             amount = geth.callContract('Faucet','getFaucetBalance',True)
             print('Contract has',Web3.fromWei(amount,'ether'),'ether')

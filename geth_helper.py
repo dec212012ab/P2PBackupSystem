@@ -409,12 +409,15 @@ class GethHelper:
     def callContract(self,contract_name:str,func_name:str,localized:bool=True,tx={},*args,**kwargs):
         try:
             if not contract_name in self.contract_registry['Contracts']:
-                if not contract_name in self.contracts:
+                if not contract_name in self.contracts.keys():
                     print("Contract with name:",contract_name,"was not found!")
                     return False
                 else:
                     #Otherwise publish the contract and note the transaction in the registry
-                    self.publishContract(contract_name)
+                    #self.publishContract(contract_name)
+                    print(contract_name,"contract not published?!")
+                    print(list(self.contracts.keys()))
+                    return False
             else:
                 #Else interact with the live contract instance.
                 #TODO: Need to setup ABI access over shared MFS or cluster pins

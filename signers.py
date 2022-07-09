@@ -10,7 +10,7 @@ logging.basicConfig(filename=str(Path.home()/'.eth'/'signers.log'),encoding='utf
 
 class SignerMonitor:
     def __init__(self,geth:GethHelper):
-        self.signer_target_count = 7
+        self.signer_target_count = 2
         self.sleep_interval_s = 5
         self.count_check_interval_s = 15
         self.rotation_interval_s = 60
@@ -19,6 +19,7 @@ class SignerMonitor:
         self._thread_exit = False
         self.top_off_threshold_ether = 5
         self.donate_threshold_ether = 12
+        self.donate_lower_limit = 10
 
         self.use_fifo_rotation:bool = True
         self.signer_fifo:dict[str,int] = {}
@@ -27,14 +28,14 @@ class SignerMonitor:
         self._thread_exit = True
     
     def exitFromSignerList(self):
-        if not self.geth.callContract('ExitSigner','isOwner'):
+        if not self.geth.callContract('ExitSigner','isOwner',True,{},self.geth.session.eth.coinbase):
             exit_node = self.geth.callContract('ExitSigner','getExitingNode')
             timeout_limit_s = 62
             timeout_triggered = False
             exit_start = time.time()
             while str(exit_node).lower() != self.geth.session.eth.coinbase.lower():
                 logging.info('My coinbase: ' + self.geth.session.eth.coinbase.lower())
-                logging.info('Exit node: ' + exit_node)
+                logging.info('Exit node: ' + str(exit_node))
                 self.geth.callContract('ExitSigner','signalExit',False)
                 time.sleep(1)
                 #timeout_limit_s -= 1
@@ -80,7 +81,17 @@ class SignerMonitor:
         #    self.geth.callContract('ExitSigner','finalizeExit',False)
         #else:
         #    print(exiting_nodes)
-        
+        signers = self.geth.getSigners()
+        for s in signers:
+            if not self.signer_fifo.get(s,None):
+                self.signer_fifo[s]=0
+            else:
+                self.signer_fifo[s]+=1
+        for s in self.signer_fifo.keys():
+            if not s in signers:
+                self.signer_fifo[s] = -1
+            if self.geth.callContract('ExitSigner','isOwner',True,{},Web3.toChecksumAddress(s)):
+                self.signer_fifo[s] = -2
 
         while not self._thread_exit:
             t1 = time.time()
@@ -89,14 +100,16 @@ class SignerMonitor:
                 logging.info("Starting miner")
                 self.geth.session.geth.miner.start()
             
+            #Request from faucet
             local_balance_wei = self.geth.session.eth.get_balance(self.geth.session.eth.coinbase)
             if Web3.fromWei(local_balance_wei,'ether') <= self.top_off_threshold_ether:
                 logging.info("Requesting funds from faucet")
                 self.geth.callContract('Faucet','requestFunds',False,{},self.geth.session.eth.coinbase)
             
+            #Donate to the faucet
             if Web3.fromWei(local_balance_wei,'ether') >= self.donate_threshold_ether:
                 logging.info('Donating excess to faucet')
-                donate_amount = local_balance_wei - Web3.toWei(self.donate_threshold_ether,'ether')
+                donate_amount = local_balance_wei - Web3.toWei(self.donate_lower_limit,'ether')
                 self.geth.callContract('Faucet','donateToFaucet',False,tx={'value':donate_amount})
             
             #Check exiting node
@@ -129,43 +142,73 @@ class SignerMonitor:
                                 if peer['id'] in self.geth.peer_coinbase_registry['Coinbase']:
                                     cb_addr = self.geth.peer_coinbase_registry['Coinbase'][peer['id']].lower()
                                     if not cb_addr in signers and cb_addr != exiting_node:
-                                        logging.info('Proposing signer: '+cb_addr)
-                                        self.geth.proposeSigner(cb_addr)
-                                        break
+                                        if self.signer_fifo.get(cb_addr,None) is None:
+                                            logging.info(str(self.signer_fifo))
+                                            self.signer_fifo[cb_addr] = 0
+                                        elif self.signer_fifo.get(cb_addr,None) == -2:
+                                            logging.info('is owner')
+                                            continue
+                                        elif self.signer_fifo.get(cb_addr,None) == -1:
+                                            logging.info('adding to life count')
+                                            self.signer_fifo[cb_addr]+=1
+                                        elif self.signer_fifo.get(cb_addr,None) == 0:
+                                            logging.info('Proposing signer: '+cb_addr)
+                                            self.geth.proposeSigner(cb_addr)
+                                            break
+                                        else:
+                                            logging.info('What is going on?')                                        
+                                    else:
+                                        logging.info('Signers? '+str(signers))
+                                else:
+                                    logging.info(str(peer['id'] + ' not in '+str(list(self.geth.peer_coinbase_registry.keys()))))
                 
                 t0_count = time.time()
             
+            #Signer Rotation
             if t1-t0_rot >= self.rotation_interval_s:
                 if self.use_fifo_rotation:
                     signers = self.geth.getSigners()
                     for s in signers:
-                        if not self.signer_fifo.get(s,None):
+                        s = str(s).lower()
+                        if not self.signer_fifo.get(s.lower(),None):
                             self.signer_fifo[s]=1
                         else:
                             self.signer_fifo[s]+=1
                     for s in self.signer_fifo.keys():
+                        s = s.lower()
                         if not s in signers:
                             self.signer_fifo[s] = -1
-                        if self.geth.callContract('ExitSigner','isOwner',True,{},s):
+                        if self.geth.callContract('ExitSigner','isOwner',True,{},Web3.toChecksumAddress(s)):
                             self.signer_fifo[s] = -2
                     demote_target = max(self.signer_fifo,key=self.signer_fifo.get)
-                    if self.signer_fifo[demote_target]<=0:
+                    logging.info("Demote target: " + str(demote_target))
+                    is_owner = self.geth.callContract('ExitSigner','isOwner',True,{},Web3.toChecksumAddress(demote_target))
+                    owner = self.geth.callContract('ExitSigner','getOwner',True)
+                    logging.info('Owner: ' + str(owner))
+                    logging.info("Is Demotion Target the initial node? " + str(is_owner))
+                    logging.info("Signer FIFO: "+str(self.signer_fifo))
+                    if self.signer_fifo[demote_target]<=0 or is_owner:
                         t0_rot = time.time()
                     else:
+                        logging.info("Attempting to demote "+str(demote_target))
                         self.geth.demoteSigner(demote_target)
                     pass
                 else:
-                    if not self.geth.callContract('ExitSigner','isOwner',True,{},self.geth.session.eth.coinbase):
+                    if not self.geth.callContract('ExitSigner','isOwner',True,{},Web3.toChecksumAddress(self.geth.session.eth.coinbase)):
                         logging.info("Rotation triggered.")
                         self.exitFromSignerList()
                         t0_rot = time.time()
             
-            
-            
             if exiting_node != '0x0000000000000000000000000000000000000000':
                 self.geth.demoteSigner(exiting_node)
-                logging.info("Voting to demote: " + exiting_node)
+                logging.info("Voting to demote: " + str(exiting_node))
             
+            #Call faucet for poor peers
+            for peer in self.geth.session.geth.admin.peers():
+                if str(peer['id']) in self.geth.peer_coinbase_registry['Coinbase'] and self.geth.session.eth.get_balance(self.geth.peer_coinbase_registry['Coinbase'][peer['id']])<Web3.toWei(1,'ether'):
+                    logging.info("Calling faucet for poor peer: "+str(self.geth.peer_coinbase_registry['Coinbase'][peer['id']]))
+                    self.geth.callContract('Faucet','requestFunds',False,{},Web3.toChecksumAddress(self.geth.peer_coinbase_registry['Coinbase'][peer['id']].lower()))
+                        
             
             time.sleep(self.sleep_interval_s)
 

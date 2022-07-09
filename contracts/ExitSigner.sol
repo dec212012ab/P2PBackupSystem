@@ -46,6 +46,10 @@ contract ExitSigner{
         return addr == owner;
     }
 
+    function getOwner() view public returns (address retVal){
+        return owner;
+    }
+
     function canExit() view public returns (bool retVal){
         return msg.sender != owner && exiting_node==address(0);
     }
