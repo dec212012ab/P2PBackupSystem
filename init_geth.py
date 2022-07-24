@@ -20,7 +20,8 @@ def main():
         geth = GethHelper("\\\\.\\pipe\\geth.ipc")
     else:
         geth = GethHelper(str(Path.home()/'.eth'/'node0'/'geth.ipc'))
-    geth.startDaemon(netrestrict=['192.168.3.0/24','192.168.2.0/24'],hide_output=False)
+    #geth.startDaemon(netrestrict=['192.168.3.0/24','192.168.2.0/24'],hide_output=False)
+    geth.startDaemon(netrestrict=['192.168.29.0/24'],hide_output=False)
     geth.connect()
     
     if geth.session.isConnected():

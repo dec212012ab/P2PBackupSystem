@@ -37,13 +37,13 @@ class IPFS:
                     cmd_str+='&'+str(item)+'='+str(kwargs[item])
 
         #print('Assembled',cmd_str)
-        try:
-            return self.session.post(cmd_str,files=files)
-        except:
-            tmp = DotDict()
-            tmp.status_code = 404
-            tmp.text = "Connection to http://"+str(self.host)+':'+str(self.port)+' failed. Is the IPFS Daemon running?'
-            return tmp
+        #try:
+        return self.session.post(cmd_str,files=files)
+        #except:
+        #    tmp = DotDict()
+        #    tmp.status_code = 404
+        #    tmp.text = "Connection to http://"+str(self.host)+':'+str(self.port)+' failed. Is the IPFS Daemon running?'
+        #    return tmp
 
 class ClusterPin:
     def __init__(self):

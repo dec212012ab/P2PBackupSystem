@@ -207,6 +207,7 @@ def installIPFS(args):
                 
                 found = False
                 for tmp_path in user_path.strip().split(';'):
+                    print('tmp: ',tmp_path)
                     if not tmp_path.strip():
                         continue
                     if p == tmp_path:
@@ -222,6 +223,7 @@ def installIPFS(args):
                     output = subprocess.run(['setx','PATH',user_path+p+';']).stdout
                     lPATH += ';'+p
                     os.environ['PATH'] = lPATH
+                #exit(0)
             else:
                 p = str(Path.home()/'Apps'/'go-ipfs') #'/usr/local/go-ipfs'
                 found = False
@@ -312,11 +314,14 @@ def installIPFS(args):
                 proc = subprocess.Popen(['ipfs','daemon'])
                 node_id = None
                 while True:
-                    result = ipfs_.execute_cmd('id',{})
-                    if result.status_code == 200:
-                        node_id = result.json()['ID']
-                        break
-                proc.terminate()
+                    try:
+                        result = ipfs_.execute_cmd('id',{})
+                        if result.status_code == 200:
+                            node_id = result.json()['ID']
+                            break
+                    except:
+                        print('IPFS daemon is not ready yet...')
+                        
                 bootstrap_addr+=node_id
                 
                 print('Removing current bootstrap targets')
@@ -350,7 +355,8 @@ def installIPFS(args):
                                 print("Adding bootstrap address:",item)
                                 output = subprocess.run(['ipfs','bootstrap','add',item],capture_output=True,text=True)
                                 print(output.stdout,output.stderr)
-    
+
+                proc.terminate()
     print("IPFS Installation Step Complete")
 
 def installIPFSClusterService(args):
