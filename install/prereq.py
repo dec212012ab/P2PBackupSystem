@@ -1,6 +1,7 @@
 
 import argparse
 import ctypes
+from email import message
 import json
 import os
 import pathlib
@@ -243,6 +244,37 @@ def installIPFS(args):
                     #    os.environ['PATH']+=';'+p
                     #else:
                     os.environ['PATH']+=':'+p
+            
+            #Set IPFS repository location
+            result = messagebox.askyesno("IPFS DataStore Location","Use default path ~/.ipfs for the IPFS datastore?")
+            datastore_path = str(Path.home())
+            if not result:
+                while True:
+                    result = filedialog.askdirectory(initialdir=str(Path.home()))
+                    if not result:
+                        result = messagebox.askyesno("IPFS DataStore Location","Use default path ~/.ipfs for the IPFS datastore?")
+                        if not result:
+                            break
+                        else:
+                            continue
+                    datastore_path = os.path.join(result,'.ipfs')
+                    if os.path.isdir(datastore_path):
+                        result = messagebox.askyesno("IPFS DataStore Location","An IPFS datastore folder already exists. Replace existing folder with a new one?")
+                        if result:
+                            shutil.rmtree(datastore_path)
+                            os.makedirs(datastore_path)
+                        break
+                        #Otherwise just use what's already there
+                    else:
+                        os.makedirs(datastore_path)
+                if isWindows():
+                    print("Setting IPFS_PATH environment variable to point to local repository location...")
+                    output = subprocess.run(['setx','IPFS_PATH',datastore_path]).stdout
+                    print(output)
+                else:
+                    with open(os.path.join(home_dir,'.bashrc'),'a') as f:
+                        f.write('\nexport IPFS_PATH='+datastore_path+'\n')
+                    os.environ['IPFS_PATH']=datastore_path
                         
             #Generate Swarm Key for Private IPFS Network
             if args.generate_swarm_key:
@@ -615,7 +647,8 @@ def installGeth(args):
 
             if not args.skip_geth_user_creation:
                 #Check for pswd file to use for account creation else generate a new one.
-                acct_name = None
+                acct_name = 'node0'
+                '''
                 while True:
                     acct_name = simpledialog.askstring("Create New Geth Account",'Enter New Geth Account Name')
                     
@@ -642,6 +675,8 @@ def installGeth(args):
                         if not valid:
                             continue
                         break
+                '''
+                #
                 data_dir = os.path.join(eth_path,acct_name)
                 pswd = None
                 while True:

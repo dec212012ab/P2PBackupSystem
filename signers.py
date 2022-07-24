@@ -59,8 +59,6 @@ class SignerMonitor:
             return not timeout_triggered
         return False
 
-
-
     def run(self):
         t0_count = time.time()
         t0_rot = t0_count
